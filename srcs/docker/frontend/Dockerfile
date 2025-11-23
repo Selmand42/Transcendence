@@ -5,7 +5,8 @@ WORKDIR /app
 # Doğru klasör (frontend) altındaki package.json'ı kopyalayarak bağımlılık önbelleğini etkin kullanıyoruz.
 COPY frontend/package.json ./
 # Projeyi geliştirme modunda çalıştırmak için gerekli paketleri kuruyoruz.
-RUN npm install
+
+RUN npm install --force
 # Kalan tüm frontend kaynaklarını doğru klasörden içeri alıyoruz.
 COPY frontend/. .
 # Vite geliştirme sunucusunun dinlediği portu dışarı açıyoruz ki nginx proxy yapabilsin.

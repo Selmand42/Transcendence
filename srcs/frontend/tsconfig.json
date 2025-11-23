@@ -18,5 +18,5 @@
       "baseUrl": "."
     },
     // Derleme sürecine dahil edilecek dosya/dizinleri listeliyoruz.
-    "include": ["src", "vite.config.ts"]
+    "include": ["src", "vite.config.ts", "src/game/Player.ts", "src/game/Ball.ts"]
   }
