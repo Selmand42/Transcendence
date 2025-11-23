@@ -15,8 +15,6 @@ const formatDate = (value: string) => {
   return date.toLocaleString();
 };
 
-<<<<<<< HEAD
-=======
 const renderHeader = (nickname: string) => `
   <header class="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 shadow-lg border-b border-slate-700/50">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -83,76 +81,12 @@ const renderTournamentSection = () => `
   </section>
 `;
 
->>>>>>> bf8cea7 (frontend tailwind css renewed)
 export const renderDashboardView = (container: HTMLElement) => {
   let session = loadSession();
   if (!session) {
     location.hash = '/auth';
     return;
   }
-
-<<<<<<< HEAD
-  const root = document.createElement('main');
-  root.className = 'app dashboard';
-  root.innerHTML = `
-    <header class="dashboard__header">
-      <div>
-        <p class="dashboard__eyebrow">Profil</p>
-        <h1 data-profile-field="nickname">${escapeHtml(session.nickname)}</h1>
-        <p class="dashboard__muted">
-          <span data-profile-field="email">${escapeHtml(session.email)}</span> •
-          <span data-profile-field="provider">${session.provider === 'google' ? 'Google' : 'Manuel'} giriş</span>
-        </p>
-      </div>
-      <div class="dashboard__actions">
-        <button class="button" type="button" data-action="play">Play Now</button>
-        <button class="button button--secondary" type="button" data-action="tournaments">Turnuvalar</button>
-        <button class="button button--secondary" type="button" data-action="logout">Çıkış</button>
-      </div>
-    </header>
-    <section class="dashboard__card">
-      <h2>Hesap Özeti</h2>
-      <dl class="dashboard__list">
-        <div>
-          <dt>Kullanıcı ID</dt>
-          <dd data-profile-field="id">#${session.id}</dd>
-        </div>
-        <div>
-          <dt>Takma Ad</dt>
-          <dd>
-            <div class="dashboard__nickname">
-              <span data-profile-field="nicknameInline">${escapeHtml(session.nickname)}</span>
-              <button class="icon-button" type="button" data-action="edit-nickname" aria-label="Takma adı düzenle">
-                ✏️
-              </button>
-            </div>
-            <form class="dashboard__nickname-form is-hidden" data-nickname-form>
-              <input type="text" name="nickname" data-nickname-input value="${escapeHtml(
-                session.nickname
-              )}" minlength="3" maxlength="48" required/>
-              <div class="dashboard__nickname-actions">
-                <button class="button button--small" type="submit">Kaydet</button>
-                <button class="button button--secondary button--small" type="button" data-action="cancel-nickname">Vazgeç</button>
-              </div>
-              <p class="status" data-status="nickname"></p>
-            </form>
-          </dd>
-        </div>
-        <div>
-          <dt>Giriş Provider</dt>
-          <dd data-profile-field="providerLabel">${session.provider === 'google' ? 'Google OAuth' : 'Local (manuel)'}</dd>
-        </div>
-        <div>
-          <dt>Katılım Tarihi</dt>
-          <dd data-profile-field="createdAt">-</dd>
-        </div>
-      </dl>
-    </section>
-    <section class="dashboard__card dashboard__card--placeholder">
-      <h2>Turnuva / Oyun Durumu</h2>
-      <p>Turnuva sistemi bu alanda listelenecek. Şimdilik Play Now ile Pong’a geçebilirsin.</p>
-    </section>
-=======
   // Container'ın stillerini temizle
   container.className = '';
   container.style.cssText = '';
@@ -165,15 +99,11 @@ export const renderDashboardView = (container: HTMLElement) => {
       ${renderAccountSummary(session)}
       ${renderTournamentSection()}
     </div>
->>>>>>> bf8cea7 (frontend tailwind css renewed)
   `;
 
   container.appendChild(root);
 
   const applyProfile = (profile: ProfilePayload) => {
-<<<<<<< HEAD
-    session = { ...session, nickname: profile.nickname };
-=======
     if (!session) return;
     session = { 
       id: profile.id,
@@ -181,7 +111,6 @@ export const renderDashboardView = (container: HTMLElement) => {
       nickname: profile.nickname,
       provider: profile.provider
     };
->>>>>>> bf8cea7 (frontend tailwind css renewed)
     persistSession(session);
     const setText = (selector: string, value: string) => {
       const node = root.querySelector<HTMLElement>(selector);
@@ -189,14 +118,6 @@ export const renderDashboardView = (container: HTMLElement) => {
     };
 
     setText('[data-profile-field="nickname"]', profile.nickname);
-<<<<<<< HEAD
-    setText('[data-profile-field="email"]', profile.email);
-    setText(
-      '[data-profile-field="provider"]',
-      profile.provider === 'google' ? 'Google giriş' : 'Manuel giriş'
-    );
-=======
->>>>>>> bf8cea7 (frontend tailwind css renewed)
     setText('[data-profile-field="id"]', `#${profile.id}`);
     setText('[data-profile-field="nicknameInline"]', profile.nickname);
     setText(
@@ -260,11 +181,6 @@ export const renderDashboardView = (container: HTMLElement) => {
   const editNicknameButton = root.querySelector<HTMLButtonElement>('[data-action="edit-nickname"]');
   const cancelNicknameButton = root.querySelector<HTMLButtonElement>('[data-action="cancel-nickname"]');
 
-<<<<<<< HEAD
-  const setNicknameEditing = (isEditing: boolean) => {
-    nicknameForm?.classList.toggle('is-hidden', !isEditing);
-    editNicknameButton?.classList.toggle('is-hidden', isEditing);
-=======
   const updateNicknameStatus = (type: 'loading' | 'success' | 'error', message = '') => {
     if (!nicknameStatus) return;
 
@@ -338,25 +254,16 @@ export const renderDashboardView = (container: HTMLElement) => {
         editNicknameButton.classList.remove('hidden');
       }
     }
->>>>>>> bf8cea7 (frontend tailwind css renewed)
     if (isEditing) {
       nicknameInput?.focus();
       nicknameInput?.select();
     } else if (nicknameStatus) {
-<<<<<<< HEAD
-      nicknameStatus.textContent = '';
-=======
       updateNicknameStatus('error', ''); // Status'u temizle
->>>>>>> bf8cea7 (frontend tailwind css renewed)
     }
   };
 
   editNicknameButton?.addEventListener('click', () => {
-<<<<<<< HEAD
-    if (nicknameInput) {
-=======
     if (nicknameInput && session) {
->>>>>>> bf8cea7 (frontend tailwind css renewed)
       nicknameInput.value = session.nickname;
     }
     setNicknameEditing(true);
@@ -371,19 +278,11 @@ export const renderDashboardView = (container: HTMLElement) => {
     if (!nicknameInput) return;
     const nextNickname = nicknameInput.value.trim();
     if (nextNickname.length < 3 || nextNickname.length > 48) {
-<<<<<<< HEAD
-      if (nicknameStatus) nicknameStatus.textContent = 'Takma ad 3-48 karakter arası olmalı.';
-      return;
-    }
-
-    nicknameStatus!.textContent = 'Kaydediliyor...';
-=======
       updateNicknameStatus('error', 'Takma ad 3-48 karakter arası olmalı.');
       return;
     }
 
     updateNicknameStatus('loading', 'Kaydediliyor...');
->>>>>>> bf8cea7 (frontend tailwind css renewed)
     try {
       const response = await fetch('/api/users/profile', {
         method: 'PATCH',
@@ -393,29 +292,17 @@ export const renderDashboardView = (container: HTMLElement) => {
       });
       if (!response.ok) {
         const payload = (await response.json().catch(() => null)) as { message?: string } | null;
-<<<<<<< HEAD
-        nicknameStatus!.textContent = payload?.message ?? 'Güncelleme başarısız oldu.';
-=======
         updateNicknameStatus('error', payload?.message ?? 'Güncelleme başarısız oldu.');
->>>>>>> bf8cea7 (frontend tailwind css renewed)
         return;
       }
 
       const profile = (await response.json()) as ProfilePayload;
       applyProfile(profile);
-<<<<<<< HEAD
-      nicknameStatus!.textContent = 'Güncellendi.';
-      setNicknameEditing(false);
-    } catch (error) {
-      console.warn('Takma ad güncellenemedi:', error);
-      nicknameStatus!.textContent = 'Beklenmeyen bir hata oluştu.';
-=======
       updateNicknameStatus('success', 'Güncellendi.');
       setNicknameEditing(false);
     } catch (error) {
       console.warn('Takma ad güncellenemedi:', error);
       updateNicknameStatus('error', 'Beklenmeyen bir hata oluştu.');
->>>>>>> bf8cea7 (frontend tailwind css renewed)
     }
   });
 };

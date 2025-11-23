@@ -1,7 +1,5 @@
-<<<<<<< HEAD
-=======
+
 import './styles.css';
->>>>>>> bf8cea7 (frontend tailwind css renewed)
 import { Router } from './router';
 import { renderAuthView } from './views/auth';
 import { renderDashboardView } from './views/dashboard';

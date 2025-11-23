@@ -25,22 +25,6 @@ const powerOfTwoOptions = [2, 4, 8, 16, 32];
 
 const renderBracket = (tournament: TournamentDTO) => {
   if (!tournament.bracket || tournament.bracket.rounds.length === 0) {
-<<<<<<< HEAD
-    return '<p>Bracket oluşturulduğunda burada görünecek.</p>';
-  }
-  const [firstRound] = tournament.bracket.rounds;
-  return `
-    <div class="bracket">
-      ${firstRound.matches
-        .map(
-          (match) => `
-          <div class="bracket__match">
-            <p>Match #${match.match}</p>
-            <div>
-              <span>${match.playerA.alias}</span>
-              <span>vs</span>
-              <span>${match.playerB.alias}</span>
-=======
     return '<p class="text-slate-400 text-lg text-center py-8">Bracket oluşturulduğunda burada görünecek.</p>';
   }
   const [firstRound] = tournament.bracket.rounds;
@@ -58,7 +42,6 @@ const renderBracket = (tournament: TournamentDTO) => {
               <span class="px-4 py-2 rounded-lg bg-white/80 text-slate-900 font-semibold shadow-sm">${match.playerA.alias}${match.playerA.isAi ? ' (AI)' : ''}</span>
               <span class="text-slate-500 font-bold">vs</span>
               <span class="px-4 py-2 rounded-lg bg-white/80 text-slate-900 font-semibold shadow-sm">${match.playerB.alias}${match.playerB.isAi ? ' (AI)' : ''}</span>
->>>>>>> bf8cea7 (frontend tailwind css renewed)
             </div>
           </div>
         `
@@ -75,43 +58,6 @@ export const renderTournamentView = (container: HTMLElement) => {
     return;
   }
 
-<<<<<<< HEAD
-  const root = document.createElement('main');
-  root.className = 'app tournament';
-  root.innerHTML = `
-    <header class="tournament__header">
-      <div>
-        <h1>Turnuvalar</h1>
-        <p>Yeni turnuva oluştur veya mevcut turnuvalara katıl.</p>
-      </div>
-    </header>
-    <section class="tournament__tabs">
-      <button class="tab-button is-active" data-tab="create">Turnuva Oluştur</button>
-      <button class="tab-button" data-tab="list">Aktif Turnuvalar</button>
-    </section>
-    <section class="tournament__content" data-tab-panel="create">
-      <form class="tournament__form" data-form="create">
-        <label>
-          <span>Turnuva adı</span>
-          <input type="text" name="name" placeholder="Örn. Akşam Ligi" required minlength="3" maxlength="64"/>
-        </label>
-        <label>
-          <span>Maksimum oyuncu (2^x)</span>
-          <select name="maxPlayers">
-            ${powerOfTwoOptions
-              .map((size) => `<option value="${size}">${size} oyuncu</option>`)
-              .join('')}
-          </select>
-        </label>
-        <button class="button" type="submit">Turnuvayı Oluştur</button>
-        <p class="status" data-status="create"></p>
-      </form>
-    </section>
-    <section class="tournament__content is-hidden" data-tab-panel="list">
-      <div data-list></div>
-      <p class="status" data-status="list"></p>
-    </section>
-=======
   // Container'ın stillerini temizle
   container.className = '';
   container.style.cssText = '';
@@ -180,23 +126,12 @@ export const renderTournamentView = (container: HTMLElement) => {
         <p class="flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-medium min-h-[48px] hidden mt-6" data-status="list"></p>
       </section>
     </div>
->>>>>>> bf8cea7 (frontend tailwind css renewed)
   `;
 
   container.appendChild(root);
 
   const switchTab = (target: 'create' | 'list') => {
     root
-<<<<<<< HEAD
-      .querySelectorAll<HTMLButtonElement>('.tab-button')
-      .forEach((button) => button.classList.toggle('is-active', button.dataset.tab === target));
-    root
-      .querySelectorAll<HTMLElement>('[data-tab-panel]')
-      .forEach((panel) => panel.classList.toggle('is-hidden', panel.dataset.tabPanel !== target));
-  };
-
-  root.querySelectorAll<HTMLButtonElement>('.tab-button').forEach((button) => {
-=======
       .querySelectorAll<HTMLButtonElement>('[data-tab]')
       .forEach((button) => {
         const isActive = button.dataset.tab === target;
@@ -220,7 +155,6 @@ export const renderTournamentView = (container: HTMLElement) => {
   };
 
   root.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach((button) => {
->>>>>>> bf8cea7 (frontend tailwind css renewed)
     button.addEventListener('click', () => {
       switchTab(button.dataset.tab === 'list' ? 'list' : 'create');
       if (button.dataset.tab === 'list') {
@@ -229,22 +163,15 @@ export const renderTournamentView = (container: HTMLElement) => {
     });
   });
 
-<<<<<<< HEAD
-=======
   const dashboardButton = root.querySelector<HTMLButtonElement>('[data-action="dashboard"]');
   dashboardButton?.addEventListener('click', () => {
     location.hash = '/dashboard';
   });
 
->>>>>>> bf8cea7 (frontend tailwind css renewed)
   const createStatus = root.querySelector<HTMLElement>('[data-status="create"]');
   const listStatus = root.querySelector<HTMLElement>('[data-status="list"]');
   const listContainer = root.querySelector<HTMLElement>('[data-list]');
 
-<<<<<<< HEAD
-  const fetchTournaments = async () => {
-    listStatus!.textContent = 'Turnuvalar yükleniyor...';
-=======
   const updateStatus = (statusElement: HTMLElement | null, type: 'loading' | 'success' | 'error', message = '') => {
     if (!statusElement) return;
 
@@ -303,22 +230,12 @@ export const renderTournamentView = (container: HTMLElement) => {
 
   const fetchTournaments = async () => {
     updateStatus(listStatus, 'loading', 'Turnuvalar yükleniyor...');
->>>>>>> bf8cea7 (frontend tailwind css renewed)
     try {
       const response = await fetch('/api/tournaments', { credentials: 'include' });
       if (!response.ok) {
         if (response.status === 401) {
           location.hash = '/auth';
         }
-<<<<<<< HEAD
-        listStatus!.textContent = 'Turnuvalar alınamadı.';
-        return;
-      }
-      const tournaments = (await response.json()) as TournamentDTO[];
-      listStatus!.textContent = '';
-      if (!tournaments.length) {
-        listContainer!.innerHTML = '<p>Aktif turnuva yok.</p>';
-=======
         updateStatus(listStatus, 'error', 'Turnuvalar alınamadı.');
         return;
       }
@@ -326,37 +243,11 @@ export const renderTournamentView = (container: HTMLElement) => {
       updateStatus(listStatus, 'error', '');
       if (!tournaments.length) {
         listContainer!.innerHTML = '<p class="text-slate-400 text-lg text-center py-12">Aktif turnuva yok.</p>';
->>>>>>> bf8cea7 (frontend tailwind css renewed)
         return;
       }
       listContainer!.innerHTML = tournaments
         .map(
           (tournament) => `
-<<<<<<< HEAD
-            <article class="tournament-card ${tournament.status === 'active' ? 'is-active' : ''}">
-              <header>
-                <div>
-                  <p class="tournament-card__status">${tournament.status === 'active' ? 'Başladı' : 'Beklemede'}</p>
-                  <h3>${tournament.name}</h3>
-                  <p class="tournament-card__meta">Sahip: ${
-                    tournament.ownerNickname ?? 'Bilinmiyor'
-                  }</p>
-                </div>
-                <div class="tournament-card__badge">${tournament.currentPlayers}/${tournament.maxPlayers}</div>
-              </header>
-              <div class="tournament-card__body">
-                ${
-                  tournament.status === 'pending'
-                    ? `
-                      <form data-join="${tournament.id}" class="tournament-card__join">
-                        <button class="button" type="submit">Takma adım ile katıl</button>
-                      </form>
-                      ${
-                        tournament.ownerId === session.id
-                          ? `<button class="button button--secondary" data-action="start" data-id="${tournament.id}">Turnuvayı Başlat</button>`
-                          : ''
-                      }
-=======
             <article class="rounded-3xl bg-white/95 backdrop-blur-xl p-8 shadow-2xl border border-white/20 ring-1 ring-white/10 ${tournament.status === 'active' ? 'ring-2 ring-green-500/50' : ''}">
               <header class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 pb-6 border-b border-slate-200">
                 <div class="flex-1">
@@ -390,7 +281,6 @@ export const renderTournamentView = (container: HTMLElement) => {
                             : ''
                         }
                       </div>
->>>>>>> bf8cea7 (frontend tailwind css renewed)
                     `
                     : renderBracket(tournament)
                 }
@@ -416,20 +306,12 @@ export const renderTournamentView = (container: HTMLElement) => {
       });
     } catch (error) {
       console.warn('Turnuvalar alınamadı:', error);
-<<<<<<< HEAD
-      listStatus!.textContent = 'Turnuvalar alınamadı.';
-=======
       updateStatus(listStatus, 'error', 'Turnuvalar alınamadı.');
->>>>>>> bf8cea7 (frontend tailwind css renewed)
     }
   };
 
   const joinTournament = async (id: number) => {
-<<<<<<< HEAD
-    listStatus!.textContent = 'Katılım gönderiliyor...';
-=======
     updateStatus(listStatus, 'loading', 'Katılım gönderiliyor...');
->>>>>>> bf8cea7 (frontend tailwind css renewed)
     try {
       const response = await fetch(`/api/tournaments/${id}/join`, {
         method: 'POST',
@@ -437,16 +319,6 @@ export const renderTournamentView = (container: HTMLElement) => {
       });
       if (!response.ok) {
         const payload = (await response.json().catch(() => null)) as { message?: string } | null;
-<<<<<<< HEAD
-        listStatus!.textContent = payload?.message ?? 'Katılım başarısız oldu.';
-        return;
-      }
-      listStatus!.textContent = 'Turnuvaya katıldın!';
-      await fetchTournaments();
-    } catch (error) {
-      console.warn('Katılım hatası:', error);
-      listStatus!.textContent = 'Katılım sırasında hata oluştu.';
-=======
         updateStatus(listStatus, 'error', payload?.message ?? 'Katılım başarısız oldu.');
         return;
       }
@@ -455,16 +327,11 @@ export const renderTournamentView = (container: HTMLElement) => {
     } catch (error) {
       console.warn('Katılım hatası:', error);
       updateStatus(listStatus, 'error', 'Katılım sırasında hata oluştu.');
->>>>>>> bf8cea7 (frontend tailwind css renewed)
     }
   };
 
   const startTournament = async (id: number) => {
-<<<<<<< HEAD
-    listStatus!.textContent = 'Turnuva başlatılıyor...';
-=======
     updateStatus(listStatus, 'loading', 'Turnuva başlatılıyor...');
->>>>>>> bf8cea7 (frontend tailwind css renewed)
     try {
       const response = await fetch(`/api/tournaments/${id}/start`, {
         method: 'POST',
@@ -472,16 +339,6 @@ export const renderTournamentView = (container: HTMLElement) => {
       });
       if (!response.ok) {
         const payload = (await response.json().catch(() => null)) as { message?: string } | null;
-<<<<<<< HEAD
-        listStatus!.textContent = payload?.message ?? 'Turnuva başlatılamadı.';
-        return;
-      }
-      listStatus!.textContent = 'Turnuva başlatıldı!';
-      await fetchTournaments();
-    } catch (error) {
-      console.warn('Başlatma hatası:', error);
-      listStatus!.textContent = 'Turnuva başlatılırken hata oluştu.';
-=======
         updateStatus(listStatus, 'error', payload?.message ?? 'Turnuva başlatılamadı.');
         return;
       }
@@ -490,7 +347,6 @@ export const renderTournamentView = (container: HTMLElement) => {
     } catch (error) {
       console.warn('Başlatma hatası:', error);
       updateStatus(listStatus, 'error', 'Turnuva başlatılırken hata oluştu.');
->>>>>>> bf8cea7 (frontend tailwind css renewed)
     }
   };
 
@@ -501,11 +357,7 @@ export const renderTournamentView = (container: HTMLElement) => {
       createForm.reportValidity();
       return;
     }
-<<<<<<< HEAD
-    createStatus!.textContent = 'Turnuva oluşturuluyor...';
-=======
     updateStatus(createStatus, 'loading', 'Turnuva oluşturuluyor...');
->>>>>>> bf8cea7 (frontend tailwind css renewed)
     const formData = new FormData(createForm);
     try {
       const response = await fetch('/api/tournaments', {
@@ -519,27 +371,16 @@ export const renderTournamentView = (container: HTMLElement) => {
       });
       if (!response.ok) {
         const payload = (await response.json().catch(() => null)) as { message?: string } | null;
-<<<<<<< HEAD
-        createStatus!.textContent = payload?.message ?? 'Turnuva oluşturulamadı.';
-        return;
-      }
-      createStatus!.textContent = 'Turnuva oluşturuldu!';
-=======
         updateStatus(createStatus, 'error', payload?.message ?? 'Turnuva oluşturulamadı.');
         return;
       }
       updateStatus(createStatus, 'success', 'Turnuva oluşturuldu!');
->>>>>>> bf8cea7 (frontend tailwind css renewed)
       createForm.reset();
       switchTab('list');
       await fetchTournaments();
     } catch (error) {
       console.warn('Turnuva oluşturma hatası:', error);
-<<<<<<< HEAD
-      createStatus!.textContent = 'Turnuva oluşturulamadı.';
-=======
       updateStatus(createStatus, 'error', 'Turnuva oluşturulamadı.');
->>>>>>> bf8cea7 (frontend tailwind css renewed)
     }
   });
 
