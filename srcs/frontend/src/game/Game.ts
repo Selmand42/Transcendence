@@ -74,21 +74,6 @@ export class Game {
         this.lastAIMoveTime = 0;
         this.target = 0;
         this.random_part = 0.5
-
-
-        const startButton = document.getElementById("startButton");
-        const buttonWidth = this.width * 1.5 / 10;
-        const buttonHeight = this.height * 1.5 / 10;
-        if (startButton instanceof HTMLElement) {
-            startButton.style.position = "absolute";
-            startButton.style.left = this.rect.left + (this.width - buttonWidth) / 2 + "px";
-            startButton.style.top = this.rect.top + (this.height - buttonHeight) / 2 + "px";
-            startButton.style.width = buttonWidth + "px";
-            startButton.style.height = buttonHeight + "px";
-            startButton.style.borderRadius = 15 + "px";
-            startButton.style.display = "none";
-
-        }
     }
 
     private find_target(player_x: number)
