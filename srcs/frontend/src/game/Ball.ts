@@ -37,11 +37,11 @@ export class Ball
 		this.y += this.dy * this.speed;
 	}
 
-	public reset()
+	public reset(direction?: number)
 	{
 		this.x = this.start_x;
 		this.y = this.start_y;
-		this.dx = this.start_dx;
+		this.dx = direction !== undefined ? direction : this.start_dx;
 		this.dy = this.start_dy;
 		this.speed = this.start_speed;
 	}

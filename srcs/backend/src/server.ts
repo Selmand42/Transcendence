@@ -9,6 +9,7 @@ import type { AppDatabase } from './database.js';
 import { env } from './env.js';
 import { createRateLimiter } from './rate-limit.js';
 import client, { type Registry } from 'prom-client';
+import { registerGameWebSocket } from './game-ws.js';
 
 const ACCESS_COOKIE_NAME = 'session';
 const REFRESH_COOKIE_NAME = 'refresh_session';
@@ -185,12 +186,27 @@ type TournamentDTO = {
   name: string;
   ownerId: number | null;
   ownerNickname: string | null;
-  status: 'pending' | 'active';
+  status: 'pending' | 'active' | 'completed';
   maxPlayers: number;
   currentPlayers: number;
   createdAt: string;
   startedAt?: string;
-  bracket?: Record<string, unknown> | null;
+  bracket?: {
+    rounds: Array<{
+      roundNumber: number;
+      matches: Array<{
+        matchId: string;
+        match: number;
+        playerA: { alias: string; isAi: boolean };
+        playerB: { alias: string; isAi: boolean };
+        winner: string | null;
+        scoreA: number | null;
+        scoreB: number | null;
+        status: 'pending' | 'completed';
+      }>;
+    }>;
+    completed: boolean;
+  } | null;
 };
 
 type TournamentRow = {
@@ -471,6 +487,122 @@ const chunkPairs = <T>(items: T[]) => {
   return pairs;
 };
 
+const simulateAIMatch = (): { winner: 'A' | 'B'; scoreA: number; scoreB: number } => {
+  // AI maçı simülasyonu: Rastgele bir kazanan ve gerçekçi skorlar
+  const winner = Math.random() < 0.5 ? 'A' : 'B';
+  // Skorlar: Kazanan en az 11, kaybeden en fazla 9 (2 fark kuralı)
+  const winnerScore = 11 + Math.floor(Math.random() * 3); // 11-13
+  const loserScore = Math.max(0, winnerScore - 2 - Math.floor(Math.random() * 3)); // En az 2 fark
+
+  return {
+    winner,
+    scoreA: winner === 'A' ? winnerScore : loserScore,
+    scoreB: winner === 'B' ? winnerScore : loserScore
+  };
+};
+
+const processAIMatches = async (
+  db: AppDatabase,
+  tournamentId: number,
+  bracket: TournamentDTO['bracket']
+): Promise<boolean> => {
+  if (!bracket) return false;
+
+  let hasChanges = false;
+
+  for (const round of bracket.rounds) {
+    for (const match of round.matches) {
+      // AI vs AI maçlarını otomatik simüle et
+      if (match.playerA.isAi && match.playerB.isAi && match.status === 'pending') {
+        const result = simulateAIMatch();
+        match.winner = result.winner;
+        match.scoreA = result.scoreA;
+        match.scoreB = result.scoreB;
+        match.status = 'completed';
+        hasChanges = true;
+      }
+    }
+  }
+
+  if (hasChanges) {
+    // Bracket'i güncelle
+    await db.run(
+      `
+        UPDATE tournaments
+        SET bracket_json = ?
+        WHERE id = ?
+      `,
+      JSON.stringify(bracket),
+      tournamentId
+    );
+
+    // Tamamlanan round'ları kontrol et ve bir sonraki round'u oluştur
+    for (let roundIndex = 0; roundIndex < bracket.rounds.length; roundIndex++) {
+      const round = bracket.rounds[roundIndex];
+      const completedMatches = round.matches.filter((m) => m.status === 'completed');
+      const allMatchesCompleted = round.matches.length === completedMatches.length;
+
+      if (allMatchesCompleted && roundIndex === bracket.rounds.length - 1) {
+        // Bu son round ve tamamlandı, bir sonraki round'u oluştur
+        const winners = completedMatches.map((m) => {
+          const winnerAlias = m.winner === 'A' ? m.playerA.alias : m.playerB.alias;
+          const winnerIsAi = m.winner === 'A' ? m.playerA.isAi : m.playerB.isAi;
+          return { alias: winnerAlias, isAi: winnerIsAi };
+        });
+
+        if (winners.length === 1) {
+          // Turnuva tamamlandı
+          bracket.completed = true;
+          await db.run(
+            `
+              UPDATE tournaments
+              SET status = 'completed',
+                  bracket_json = ?
+              WHERE id = ?
+            `,
+            JSON.stringify(bracket),
+            tournamentId
+          );
+        } else {
+          // Bir sonraki round'u oluştur
+          const nextRoundNumber = round.roundNumber + 1;
+          const nextPairs = chunkPairs(winners);
+          const nextRound = {
+            roundNumber: nextRoundNumber,
+            matches: nextPairs.map((pair, index) => ({
+              matchId: `r${nextRoundNumber}-m${index + 1}`,
+              match: index + 1,
+              playerA: { alias: pair[0].alias, isAi: pair[0].isAi },
+              playerB: { alias: pair[1].alias, isAi: pair[1].isAi },
+              winner: null as string | null,
+              scoreA: null as number | null,
+              scoreB: null as number | null,
+              status: 'pending' as 'pending' | 'completed'
+            }))
+          };
+          bracket.rounds.push(nextRound);
+
+          // Yeni round'daki AI maçlarını da simüle et
+          await db.run(
+            `
+              UPDATE tournaments
+              SET bracket_json = ?
+              WHERE id = ?
+            `,
+            JSON.stringify(bracket),
+            tournamentId
+          );
+
+          // Recursive olarak yeni round'daki AI maçlarını işle
+          await processAIMatches(db, tournamentId, bracket);
+        }
+      }
+    }
+  }
+
+  return hasChanges;
+};
+
 const createUniqueAlias = async (
   db: AppDatabase,
   tournamentId: number,
@@ -506,12 +638,12 @@ const mapTournamentRow = (row: TournamentRow): TournamentDTO => ({
   name: row.name,
   ownerId: row.owner_id,
   ownerNickname: row.owner_nickname,
-  status: row.status === 'active' ? 'active' : 'pending',
+  status: row.status === 'active' ? 'active' : row.status === 'completed' ? 'completed' : 'pending',
   maxPlayers: row.max_players,
   currentPlayers: row.player_count,
   createdAt: row.created_at,
   startedAt: row.started_at ?? undefined,
-  bracket: row.bracket_json ? (JSON.parse(row.bracket_json) as Record<string, unknown>) : null
+  bracket: row.bracket_json ? (JSON.parse(row.bracket_json) as TournamentDTO['bracket']) : null
 });
 
 function registerSecurityHeaders(app: FastifyInstance) {
@@ -1282,7 +1414,27 @@ export const buildServer = () => {
       );
       tournamentCreatedCounter.inc({ ownerProvider: session.provider });
 
-      const dto = await fetchTournamentDTO(request.server.db, result.lastID ?? 0);
+      const tournamentId = result.lastID ?? 0;
+
+      // Turnuva oluşturan kullanıcıyı otomatik olarak turnuvaya ekle
+      try {
+        const alias = await createUniqueAlias(request.server.db, tournamentId, session.nickname);
+        await request.server.db.run(
+          `
+            INSERT INTO tournament_players (tournament_id, user_id, alias, is_ai)
+            VALUES (?, ?, ?, 0)
+          `,
+          tournamentId,
+          session.sub,
+          alias
+        );
+        tournamentJoinedCounter.inc({ provider: session.provider });
+      } catch (error) {
+        // Eğer kullanıcı zaten eklenmişse (çok nadir bir durum), hata verme
+        request.log.warn({ err: error }, 'Turnuva oluşturucu otomatik eklenirken hata oluştu, devam ediliyor');
+      }
+
+      const dto = await fetchTournamentDTO(request.server.db, tournamentId);
       return reply.status(201).send(dto as TournamentDTO);
     }
   );
@@ -1478,13 +1630,20 @@ export const buildServer = () => {
       const bracket = {
         rounds: [
           {
+            roundNumber: 1,
             matches: pairs.map((pair, index) => ({
+              matchId: `r1-m${index + 1}`,
               match: index + 1,
               playerA: { alias: pair[0].alias, isAi: Boolean(pair[0].is_ai) },
-              playerB: { alias: pair[1].alias, isAi: Boolean(pair[1].is_ai) }
+              playerB: { alias: pair[1].alias, isAi: Boolean(pair[1].is_ai) },
+              winner: null as string | null,
+              scoreA: null as number | null,
+              scoreB: null as number | null,
+              status: 'pending' as 'pending' | 'completed'
             }))
           }
-        ]
+        ],
+        completed: false
       };
 
       await request.server.db.run(
@@ -1500,11 +1659,268 @@ export const buildServer = () => {
       );
       tournamentStartedCounter.inc();
 
+      // AI maçlarını simüle et
+      await processAIMatches(request.server.db, tournamentId, bracket);
+
       const dto = await fetchTournamentDTO(request.server.db, tournamentId);
       return reply.status(200).send(dto as TournamentDTO);
     }
   );
 
+  type SubmitMatchResultBody = {
+    winner: 'A' | 'B';
+    scoreA: number;
+    scoreB: number;
+  };
+
+  app.post<{
+    Params: { id: string; matchId: string };
+    Body: SubmitMatchResultBody;
+    Reply: TournamentDTO | ApiErrorResponse;
+  }>(
+    '/api/tournaments/:id/matches/:matchId/result',
+    { preHandler: [app.authenticate] },
+    async (request, reply) => {
+      const session = request.session;
+      if (!session) {
+        return reply.status(401).send({
+          error: 'Unauthorized',
+          message: 'Bu işlemi gerçekleştirmek için giriş yapmalısın.'
+        });
+      }
+
+      const tournamentId = Number(request.params.id);
+      const matchId = request.params.matchId;
+
+      if (!Number.isInteger(tournamentId)) {
+        return reply.status(400).send({
+          error: 'InvalidTournament',
+          message: 'Turnuva kimliği geçersiz.'
+        });
+      }
+
+      const tournament = await fetchTournamentDTO(request.server.db, tournamentId);
+      if (!tournament) {
+        return reply.status(404).send({
+          error: 'TournamentNotFound',
+          message: 'Turnuva bulunamadı.'
+        });
+      }
+
+      if (tournament.status !== 'active') {
+        return reply.status(400).send({
+          error: 'TournamentNotActive',
+          message: 'Turnuva aktif değil.'
+        });
+      }
+
+      if (!tournament.bracket) {
+        return reply.status(400).send({
+          error: 'BracketNotFound',
+          message: 'Bracket bulunamadı.'
+        });
+      }
+
+      const bracket = tournament.bracket as {
+        rounds: Array<{
+          roundNumber: number;
+          matches: Array<{
+            matchId: string;
+            match: number;
+            playerA: { alias: string; isAi: boolean };
+            playerB: { alias: string; isAi: boolean };
+            winner: string | null;
+            scoreA: number | null;
+            scoreB: number | null;
+            status: 'pending' | 'completed';
+          }>;
+        }>;
+        completed: boolean;
+      };
+
+      // Maçı bul
+      let foundMatch: typeof bracket.rounds[0]['matches'][0] | null = null;
+      let foundRoundIndex = -1;
+      let foundMatchIndex = -1;
+
+      for (let roundIndex = 0; roundIndex < bracket.rounds.length; roundIndex++) {
+        const round = bracket.rounds[roundIndex];
+        for (let matchIndex = 0; matchIndex < round.matches.length; matchIndex++) {
+          if (round.matches[matchIndex].matchId === matchId) {
+            foundMatch = round.matches[matchIndex];
+            foundRoundIndex = roundIndex;
+            foundMatchIndex = matchIndex;
+            break;
+          }
+        }
+        if (foundMatch) break;
+      }
+
+      if (!foundMatch) {
+        return reply.status(404).send({
+          error: 'MatchNotFound',
+          message: 'Maç bulunamadı.'
+        });
+      }
+
+      if (foundMatch.status === 'completed') {
+        return reply.status(400).send({
+          error: 'MatchAlreadyCompleted',
+          message: 'Bu maç zaten tamamlanmış.'
+        });
+      }
+
+      // Oyuncunun bu maçta oynadığını kontrol et
+      const playerAlias = session.nickname;
+      const isPlayerA = foundMatch.playerA.alias === playerAlias && !foundMatch.playerA.isAi;
+      const isPlayerB = foundMatch.playerB.alias === playerAlias && !foundMatch.playerB.isAi;
+
+      if (!isPlayerA && !isPlayerB && !foundMatch.playerA.isAi && !foundMatch.playerB.isAi) {
+        return reply.status(403).send({
+          error: 'Forbidden',
+          message: 'Bu maçta oynamadığın için sonuç gönderemezsin.'
+        });
+      }
+
+      const { winner, scoreA, scoreB } = request.body;
+
+      // Maç sonucunu kaydet
+      foundMatch.winner = winner;
+      foundMatch.scoreA = scoreA;
+      foundMatch.scoreB = scoreB;
+      foundMatch.status = 'completed';
+
+      // Bir sonraki round'u oluştur veya güncelle
+      const currentRound = bracket.rounds[foundRoundIndex];
+      const completedMatches = currentRound.matches.filter((m) => m.status === 'completed');
+      const allMatchesCompleted = currentRound.matches.length === completedMatches.length;
+
+      if (allMatchesCompleted) {
+        // Bu round tamamlandı, bir sonraki round'u oluştur
+        const winners = completedMatches.map((m) => {
+          const winnerAlias = m.winner === 'A' ? m.playerA.alias : m.playerB.alias;
+          const winnerIsAi = m.winner === 'A' ? m.playerA.isAi : m.playerB.isAi;
+          return { alias: winnerAlias, isAi: winnerIsAi };
+        });
+
+        if (winners.length === 1) {
+          // Turnuva tamamlandı
+          bracket.completed = true;
+        } else {
+          // Bir sonraki round'u oluştur
+          const nextRoundNumber = currentRound.roundNumber + 1;
+          const nextPairs = chunkPairs(winners);
+          const nextRound = {
+            roundNumber: nextRoundNumber,
+            matches: nextPairs.map((pair, index) => ({
+              matchId: `r${nextRoundNumber}-m${index + 1}`,
+              match: index + 1,
+              playerA: { alias: pair[0].alias, isAi: pair[0].isAi },
+              playerB: { alias: pair[1].alias, isAi: pair[1].isAi },
+              winner: null as string | null,
+              scoreA: null as number | null,
+              scoreB: null as number | null,
+              status: 'pending' as 'pending' | 'completed'
+            }))
+          };
+          bracket.rounds.push(nextRound);
+        }
+      }
+
+      // Bracket'i veritabanına kaydet
+      await request.server.db.run(
+        `
+          UPDATE tournaments
+          SET bracket_json = ?
+          WHERE id = ?
+        `,
+        JSON.stringify(bracket),
+        tournamentId
+      );
+
+      // AI maçlarını simüle et (yeni round oluşturulduysa)
+      await processAIMatches(request.server.db, tournamentId, bracket);
+
+      // Eğer turnuva tamamlandıysa status'u güncelle
+      if (bracket.completed) {
+        await request.server.db.run(
+          `
+            UPDATE tournaments
+            SET status = 'completed'
+            WHERE id = ?
+          `,
+          tournamentId
+        );
+      }
+
+      const dto = await fetchTournamentDTO(request.server.db, tournamentId);
+      return reply.status(200).send(dto as TournamentDTO);
+    }
+  );
+
+  app.delete<{
+    Params: { id: string };
+    Reply: { success: boolean } | ApiErrorResponse;
+  }>(
+    '/api/tournaments/:id',
+    { preHandler: [app.authenticate] },
+    async (request, reply) => {
+      const session = request.session;
+      if (!session) {
+        return reply.status(401).send({
+          error: 'Unauthorized',
+          message: 'Bu işlemi gerçekleştirmek için giriş yapmalısın.'
+        });
+      }
+
+      const tournamentId = Number(request.params.id);
+      if (!Number.isInteger(tournamentId)) {
+        return reply.status(400).send({
+          error: 'InvalidTournament',
+          message: 'Turnuva kimliği geçersiz.'
+        });
+      }
+
+      const tournament = await fetchTournamentDTO(request.server.db, tournamentId);
+      if (!tournament) {
+        return reply.status(404).send({
+          error: 'TournamentNotFound',
+          message: 'Turnuva bulunamadı.'
+        });
+      }
+
+      if (tournament.ownerId !== session.sub) {
+        return reply.status(403).send({
+          error: 'Forbidden',
+          message: 'Sadece turnuvayı oluşturan kişi silebilir.'
+        });
+      }
+
+      try {
+        // Önce tournament_players tablosundaki kayıtları sil (foreign key constraint)
+        await request.server.db.run(
+          `DELETE FROM tournament_players WHERE tournament_id = ?`,
+          tournamentId
+        );
+
+        // Sonra turnuvayı sil
+        await request.server.db.run(
+          `DELETE FROM tournaments WHERE id = ?`,
+          tournamentId
+        );
+
+        return reply.status(200).send({ success: true });
+      } catch (error) {
+        request.log.error({ err: error }, 'Turnuva silme hatası');
+        return reply.status(500).send({
+          error: 'InternalServerError',
+          message: 'Turnuva silinirken hata oluştu.'
+        });
+      }
+    }
+  );
+
+  registerGameWebSocket(app);
   return app;
 };
 const start = async () => {

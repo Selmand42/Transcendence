@@ -18,19 +18,29 @@ export class Game {
     private random_part;
     private scoreAEl: HTMLElement | null;
     private scoreBEl: HTMLElement | null;
+    private statusEl: HTMLElement | null;
+    private gameEnded: boolean = false;
     private animationFrameId: number | null = null;
+    private onTournamentMatchEnd?: (winner: 'A' | 'B', scoreA: number, scoreB: number) => void;
+    private tournamentId?: string;
 
 
 
     constructor(
-        ctx: CanvasRenderingContext2D, 
-        canvas: HTMLCanvasElement, 
+        ctx: CanvasRenderingContext2D,
+        canvas: HTMLCanvasElement,
         pressedKeys: Set<string>,
         scoreAEl: HTMLElement | null = null,
-        scoreBEl: HTMLElement | null = null
+        scoreBEl: HTMLElement | null = null,
+        statusEl: HTMLElement | null = null,
+        onTournamentMatchEnd?: (winner: 'A' | 'B', scoreA: number, scoreB: number) => void,
+        tournamentId?: string
     ) {
         this.scoreAEl = scoreAEl;
         this.scoreBEl = scoreBEl;
+        this.statusEl = statusEl;
+        this.onTournamentMatchEnd = onTournamentMatchEnd;
+        this.tournamentId = tournamentId;
         this.ctx = ctx;
         this.height = canvas.height;
         this.width = canvas.width;
@@ -67,7 +77,7 @@ export class Game {
         ];
 
 
-        this.ball = new Ball(canvas, this.ctx, this.width / 2, this.height / 2, this.width / 112, this.width * 2 / 68.5)
+        this.ball = new Ball(canvas, this.ctx, this.width / 2, this.height / 2, this.width / 90, this.width * 2 / 90)
 
 
         this.active = 0;
@@ -101,10 +111,15 @@ export class Game {
     }
 
     loop() {
+        // Oyun bitti ise loop'u durdur
+        if (this.gameEnded) {
+            return;
+        }
+
         // Canvas arka planını açık mavi ile doldur
         this.ctx.fillStyle = "#7dd3fc"; // Açık mavi (sky-300)
         this.ctx.fillRect(0, 0, this.width, this.height);
-        
+
         this.draw(this.line_width);
 
         this.ball.draw();
@@ -193,13 +208,80 @@ export class Game {
             this.scoreBEl.textContent = "B: " + this.players[1].score;
         }
 
-        this.ball.reset();
+        // Oyun bitiş kontrolü: En az 11 sayı ve en az 2 fark
+        const scoreA = this.players[0].score;
+        const scoreB = this.players[1].score;
+
+        if (scoreA >= 11 && scoreA - scoreB >= 2) {
+            // Oyuncu A kazandı
+            this.endGame(0);
+            return;
+        }
+
+        if (scoreB >= 11 && scoreB - scoreA >= 2) {
+            // Oyuncu B kazandı
+            this.endGame(1);
+            return;
+        }
+
+        // Toplam skora göre yön belirleme: 1-2 sayı A'ya, 3-4 sayı B'ye, 5-6 sayı A'ya, vb.
+        const totalScore = this.players[0].score + this.players[1].score;
+        const direction = (totalScore % 4) < 2 ? -1 : 1; // 0-1: A'ya (-1), 2-3: B'ye (1)
+
+        this.ball.reset(direction);
         this.active = 0;
+    }
+
+    private endGame(winner: number) {
+        this.gameEnded = true;
+        this.active = 0;
+        this.stop();
+
+        const winnerName = winner === 0 ? "A" : "B";
+        const winnerScore = winner === 0 ? this.players[0].score : this.players[1].score;
+        const loserScore = winner === 0 ? this.players[1].score : this.players[0].score;
+        const winnerKey: 'A' | 'B' = winner === 0 ? 'A' : 'B';
+        const scoreA = winner === 0 ? winnerScore : loserScore;
+        const scoreB = winner === 1 ? winnerScore : loserScore;
+
+        // Turnuva maçı sonucunu gönder
+        if (this.onTournamentMatchEnd) {
+            this.onTournamentMatchEnd(winnerKey, scoreA, scoreB);
+        }
+
+        if (this.statusEl) {
+            const isTournamentMatch = !!this.onTournamentMatchEnd;
+            this.statusEl.innerHTML = `
+                <div class="text-center">
+                    <div class="text-2xl font-extrabold mb-2 text-emerald-400">🎉 Oyun Bitti! 🎉</div>
+                    <div class="text-xl font-bold mb-1 text-emerald-300">Oyuncu ${winnerName} Kazandı!</div>
+                    <div class="text-lg text-slate-300 mb-4">Skor: ${winnerScore} - ${loserScore}</div>
+                    ${isTournamentMatch ? `
+                        <div class="mt-4">
+                            <button class="px-6 py-2 rounded-lg bg-gradient-to-r from-sky-500 to-indigo-600 text-white font-semibold hover:from-sky-600 hover:to-indigo-700 transition-all duration-200" data-action="back-to-tournament" data-tournament-id="${this.tournamentId || ''}">
+                                Turnuvaya Dön
+                            </button>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+            this.statusEl.className = 'px-6 py-4 rounded-xl text-center bg-gradient-to-br from-emerald-500/20 to-emerald-600/20 border-2 border-emerald-500/50 shadow-lg transition-all duration-200';
+
+            // Turnuvaya dön butonunu dinle
+            if (isTournamentMatch) {
+                const backButton = this.statusEl.querySelector<HTMLButtonElement>('[data-action="back-to-tournament"]');
+                if (backButton && this.tournamentId) {
+                    backButton.addEventListener('click', () => {
+                        location.hash = `/tournament?tournament=${this.tournamentId}`;
+                    });
+                }
+            }
+        }
     }
 
     private check_areas() {
 
-        if ((this.ball.dy < 0 && this.ball.y < this.line_width / 2) || (this.ball.dy > 0 && this.height - this.ball.y < this.line_width / 2))
+        if ((this.ball.dy < 0 && this.ball.y < this.line_width) || (this.ball.dy > 0 && this.height - this.ball.y < this.line_width))
             this.ball.dy *= -1;
 
 

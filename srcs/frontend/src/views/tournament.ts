@@ -5,48 +5,144 @@ type TournamentDTO = {
   name: string;
   ownerId: number | null;
   ownerNickname: string | null;
-  status: 'pending' | 'active';
+  status: 'pending' | 'active' | 'completed';
   maxPlayers: number;
   currentPlayers: number;
   createdAt: string;
   startedAt?: string;
   bracket?: {
     rounds: Array<{
+      roundNumber: number;
       matches: Array<{
+        matchId: string;
         match: number;
         playerA: { alias: string; isAi: boolean };
         playerB: { alias: string; isAi: boolean };
+        winner: string | null;
+        scoreA: number | null;
+        scoreB: number | null;
+        status: 'pending' | 'completed';
       }>;
     }>;
+    completed: boolean;
   } | null;
 };
 
 const powerOfTwoOptions = [2, 4, 8, 16, 32];
 
-const renderBracket = (tournament: TournamentDTO) => {
+const renderBracket = (tournament: TournamentDTO, currentUserId: number) => {
   if (!tournament.bracket || tournament.bracket.rounds.length === 0) {
     return '<p class="text-slate-400 text-lg text-center py-8">Bracket oluşturulduğunda burada görünecek.</p>';
   }
-  const [firstRound] = tournament.bracket.rounds;
+
+  const session = loadSession();
+  const currentUserAlias = session?.nickname || '';
+
   return `
-    <div class="space-y-4">
-      <h3 class="text-xl font-bold text-slate-900 mb-4">Turnuva Eşleşmeleri</h3>
-      ${firstRound.matches
+    <div class="space-y-8">
+      <h3 class="text-2xl font-bold text-slate-900 mb-6">Turnuva Bracket</h3>
+      ${tournament.bracket.rounds
         .map(
-          (match) => `
-          <div class="rounded-xl bg-slate-50/50 backdrop-blur-sm p-6 border-2 border-slate-200 shadow-md hover:shadow-lg transition-all duration-200">
-            <div class="flex items-center justify-between mb-4">
-              <span class="px-3 py-1 rounded-full bg-sky-100 text-sky-800 text-xs font-bold">Match #${match.match}</span>
-            </div>
-            <div class="flex items-center justify-center gap-4">
-              <span class="px-4 py-2 rounded-lg bg-white/80 text-slate-900 font-semibold shadow-sm">${match.playerA.alias}${match.playerA.isAi ? ' (AI)' : ''}</span>
-              <span class="text-slate-500 font-bold">vs</span>
-              <span class="px-4 py-2 rounded-lg bg-white/80 text-slate-900 font-semibold shadow-sm">${match.playerB.alias}${match.playerB.isAi ? ' (AI)' : ''}</span>
+          (round) => `
+          <div class="space-y-4">
+            <h4 class="text-lg font-semibold text-slate-700 border-b border-slate-300 pb-2">
+              ${round.roundNumber === tournament.bracket!.rounds.length && tournament.bracket!.completed
+                ? '🏆 Final'
+                : round.roundNumber === tournament.bracket!.rounds.length
+                  ? 'Final'
+                  : `Round ${round.roundNumber}`}
+            </h4>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              ${round.matches
+                .map(
+                  (match) => {
+                    const isCompleted = match.status === 'completed';
+                    const isPlayerInMatch =
+                      (match.playerA.alias === currentUserAlias && !match.playerA.isAi) ||
+                      (match.playerB.alias === currentUserAlias && !match.playerB.isAi);
+                    const canSubmitResult = isPlayerInMatch && !isCompleted && tournament.status === 'active';
+
+                    return `
+                    <div class="rounded-xl bg-slate-50/50 backdrop-blur-sm p-6 border-2 ${
+                      isCompleted ? 'border-green-300 bg-green-50/30' : 'border-slate-200'
+                    } shadow-md hover:shadow-lg transition-all duration-200">
+                      <div class="flex items-center justify-between mb-4">
+                        <span class="px-3 py-1 rounded-full ${
+                          isCompleted ? 'bg-green-100 text-green-800' : 'bg-sky-100 text-sky-800'
+                        } text-xs font-bold">Match #${match.match}</span>
+                        ${isCompleted ? '<span class="text-xs text-green-600 font-semibold">✓ Tamamlandı</span>' : ''}
+                      </div>
+                      <div class="space-y-3">
+                        <div class="flex items-center justify-between gap-4">
+                          <span class="flex-1 px-4 py-2 rounded-lg ${
+                            match.winner === 'A' && isCompleted
+                              ? 'bg-green-200 text-green-900 font-bold'
+                              : 'bg-white/80 text-slate-900 font-semibold'
+                          } shadow-sm text-center">
+                            ${match.playerA.alias}${match.playerA.isAi ? ' (AI)' : ''}
+                          </span>
+                          <span class="text-slate-500 font-bold">vs</span>
+                          <span class="flex-1 px-4 py-2 rounded-lg ${
+                            match.winner === 'B' && isCompleted
+                              ? 'bg-green-200 text-green-900 font-bold'
+                              : 'bg-white/80 text-slate-900 font-semibold'
+                          } shadow-sm text-center">
+                            ${match.playerB.alias}${match.playerB.isAi ? ' (AI)' : ''}
+                          </span>
+                        </div>
+                        ${
+                          isCompleted
+                            ? `
+                          <div class="text-center text-sm text-slate-600 font-semibold">
+                            Skor: ${match.scoreA} - ${match.scoreB}
+                          </div>
+                        `
+                            : canSubmitResult
+                              ? `
+                          <div class="flex gap-2 mt-4">
+                            <button
+                              class="flex-1 px-4 py-2 rounded-lg bg-gradient-to-r from-sky-500 to-indigo-600 text-white font-semibold text-sm hover:from-sky-600 hover:to-indigo-700 transition-all duration-200"
+                              data-action="play-match"
+                              data-tournament-id="${tournament.id}"
+                              data-match-id="${match.matchId}"
+                            >
+                              Maçı Oyna
+                            </button>
+                          </div>
+                        `
+                              : match.playerA.isAi && match.playerB.isAi
+                                ? `
+                          <div class="text-center text-xs text-slate-500 italic mt-2">
+                            AI maçı otomatik oynanacak
+                          </div>
+                        `
+                                : `
+                          <div class="text-center text-xs text-slate-500 italic mt-2">
+                            Bekleniyor...
+                          </div>
+                        `
+                        }
+                      </div>
+                    </div>
+                  `;
+                  }
+                )
+                .join('')}
             </div>
           </div>
         `
         )
         .join('')}
+      ${tournament.bracket.completed ? `
+        <div class="rounded-xl bg-gradient-to-r from-yellow-400 to-yellow-500 p-6 text-center shadow-lg">
+          <p class="text-2xl font-bold text-white mb-2">🏆 Turnuva Tamamlandı! 🏆</p>
+          <p class="text-white/90 text-lg">
+            Kazanan: ${tournament.bracket.rounds[tournament.bracket.rounds.length - 1].matches[0].winner === 'A'
+              ? tournament.bracket.rounds[tournament.bracket.rounds.length - 1].matches[0].playerA.alias
+              : tournament.bracket.rounds[tournament.bracket.rounds.length - 1].matches[0].playerB.alias}
+          </p>
+        </div>
+      ` : ''}
     </div>
   `;
 };
@@ -57,6 +153,11 @@ export const renderTournamentView = (container: HTMLElement) => {
     location.hash = '/auth';
     return;
   }
+
+  // URL parametrelerini kontrol et (belirli bir turnuvayı göstermek için)
+  const hash = location.hash.replace(/^#/, '');
+  const urlParams = new URLSearchParams(hash.split('?')[1] || '');
+  const targetTournamentId = urlParams.get('tournament');
 
   // Container'ın stillerini temizle
   container.className = '';
@@ -90,19 +191,19 @@ export const renderTournamentView = (container: HTMLElement) => {
           <form class="flex flex-col gap-6" data-form="create">
             <label class="flex flex-col gap-3">
               <span class="text-sm font-bold text-slate-800 tracking-wide">Turnuva adı</span>
-              <input 
-                type="text" 
-                name="name" 
-                placeholder="Örn. Akşam Ligi" 
-                required 
-                minlength="3" 
+              <input
+                type="text"
+                name="name"
+                placeholder="Örn. Akşam Ligi"
+                required
+                minlength="3"
                 maxlength="64"
                 class="w-full px-5 py-4 rounded-xl border-2 border-slate-300 bg-white/50 backdrop-blur-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-sky-500/20 focus:border-sky-500 transition-all duration-200 hover:shadow-md hover:border-slate-400"
               />
             </label>
             <label class="flex flex-col gap-3">
               <span class="text-sm font-bold text-slate-800 tracking-wide">Maksimum oyuncu (2^x)</span>
-              <select 
+              <select
                 name="maxPlayers"
                 class="w-full px-5 py-4 rounded-xl border-2 border-slate-300 bg-white/50 backdrop-blur-sm text-slate-900 focus:outline-none focus:ring-4 focus:ring-sky-500/20 focus:border-sky-500 transition-all duration-200 hover:shadow-md hover:border-slate-400"
               >
@@ -111,8 +212,8 @@ export const renderTournamentView = (container: HTMLElement) => {
                   .join('')}
               </select>
             </label>
-            <button 
-              class="px-6 py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-sky-500 to-indigo-600 text-white transition-all duration-300 hover:from-sky-600 hover:to-indigo-700 hover:shadow-lg hover:shadow-sky-500/50 hover:scale-105 transform self-start" 
+            <button
+              class="px-6 py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-sky-500 to-indigo-600 text-white transition-all duration-300 hover:from-sky-600 hover:to-indigo-700 hover:shadow-lg hover:shadow-sky-500/50 hover:scale-105 transform self-start"
               type="submit"
             >
               Turnuvayı Oluştur
@@ -154,11 +255,39 @@ export const renderTournamentView = (container: HTMLElement) => {
       });
   };
 
+  // Polling için interval ID
+  let pollingInterval: number | null = null;
+  const POLLING_INTERVAL_MS = 3000; // 3 saniye
+
+  const startPolling = () => {
+    // Eğer zaten polling varsa durdur
+    stopPolling();
+
+    // Sadece liste sekmesi aktifken polling yap
+    const isListTabActive = !root.querySelector<HTMLElement>('[data-tab-panel="list"]')?.classList.contains('hidden');
+    if (isListTabActive) {
+      pollingInterval = window.setInterval(() => {
+        void fetchTournaments();
+      }, POLLING_INTERVAL_MS);
+    }
+  };
+
+  const stopPolling = () => {
+    if (pollingInterval !== null) {
+      clearInterval(pollingInterval);
+      pollingInterval = null;
+    }
+  };
+
   root.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach((button) => {
     button.addEventListener('click', () => {
-      switchTab(button.dataset.tab === 'list' ? 'list' : 'create');
-      if (button.dataset.tab === 'list') {
+      const targetTab = button.dataset.tab === 'list' ? 'list' : 'create';
+      switchTab(targetTab);
+      if (targetTab === 'list') {
         void fetchTournaments();
+        startPolling();
+      } else {
+        stopPolling();
       }
     });
   });
@@ -247,13 +376,15 @@ export const renderTournamentView = (container: HTMLElement) => {
       }
       listContainer!.innerHTML = tournaments
         .map(
-          (tournament) => `
-            <article class="rounded-3xl bg-white/95 backdrop-blur-xl p-8 shadow-2xl border border-white/20 ring-1 ring-white/10 ${tournament.status === 'active' ? 'ring-2 ring-green-500/50' : ''}">
+          (tournament) => {
+            const isTargetTournament = targetTournamentId && Number(targetTournamentId) === tournament.id;
+            return `
+            <article id="tournament-${tournament.id}" class="rounded-3xl bg-white/95 backdrop-blur-xl p-8 shadow-2xl border border-white/20 ring-1 ring-white/10 ${tournament.status === 'active' ? 'ring-2 ring-green-500/50' : ''} ${isTargetTournament ? 'ring-4 ring-yellow-500/70 bg-yellow-50/30' : ''}">
               <header class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 pb-6 border-b border-slate-200">
                 <div class="flex-1">
                   <span class="inline-block px-3 py-1 rounded-full text-xs font-bold mb-3 ${
-                    tournament.status === 'active' 
-                      ? 'bg-green-100 text-green-800' 
+                    tournament.status === 'active'
+                      ? 'bg-green-100 text-green-800'
                       : 'bg-yellow-100 text-yellow-800'
                   }">
                     ${tournament.status === 'active' ? 'Başladı' : 'Beklemede'}
@@ -263,8 +394,19 @@ export const renderTournamentView = (container: HTMLElement) => {
                     tournament.ownerNickname ?? 'Bilinmiyor'
                   }</p>
                 </div>
-                <div class="px-4 py-2 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 text-white font-bold text-lg shadow-lg">
-                  ${tournament.currentPlayers}/${tournament.maxPlayers}
+                <div class="flex items-center gap-3">
+                  <div class="px-4 py-2 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 text-white font-bold text-lg shadow-lg">
+                    ${tournament.currentPlayers}/${tournament.maxPlayers}
+                  </div>
+                  ${
+                    tournament.ownerId === session.id
+                      ? `<button class="px-4 py-2 rounded-xl font-bold text-sm bg-red-500/90 text-white border-2 border-red-400 shadow-lg hover:bg-red-600 hover:shadow-xl hover:scale-105 transition-all duration-200" data-action="delete" data-id="${tournament.id}" title="Turnuvayı Sil">
+                          <svg class="w-5 h-5 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                          </svg>
+                        </button>`
+                      : ''
+                  }
                 </div>
               </header>
               <div>
@@ -282,13 +424,30 @@ export const renderTournamentView = (container: HTMLElement) => {
                         }
                       </div>
                     `
-                    : renderBracket(tournament)
+                    : renderBracket(tournament, session.id)
                 }
               </div>
             </article>
-          `
+          `;
+          }
         )
         .join('');
+
+      // Eğer belirli bir turnuva hedeflenmişse, o turnuvaya scroll et
+      if (targetTournamentId) {
+        const targetElement = listContainer!.querySelector(`#tournament-${targetTournamentId}`);
+        if (targetElement) {
+          setTimeout(() => {
+            targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            // Vurgulama efekti için geçici border rengi değişimi (pulse yerine)
+            const originalClasses = targetElement.className;
+            targetElement.classList.add('ring-4', 'ring-yellow-500/70', 'shadow-2xl');
+            setTimeout(() => {
+              targetElement.className = originalClasses;
+            }, 3000);
+          }, 100);
+        }
+      }
 
       listContainer!.querySelectorAll<HTMLFormElement>('[data-join]').forEach((form) => {
         form.addEventListener('submit', (event) => {
@@ -302,6 +461,28 @@ export const renderTournamentView = (container: HTMLElement) => {
         button.addEventListener('click', () => {
           const id = Number(button.dataset.id);
           void startTournament(id);
+        });
+      });
+
+      listContainer!.querySelectorAll<HTMLButtonElement>('[data-action="play-match"]').forEach((button) => {
+        button.addEventListener('click', () => {
+          const tournamentId = Number(button.dataset.tournamentId);
+          const matchId = button.dataset.matchId;
+          if (matchId) {
+            // Turnuva maçını oynamak için oyun sayfasına yönlendir
+            // Maç bilgilerini URL parametresi olarak gönder
+            location.hash = `/game?tournament=${tournamentId}&match=${encodeURIComponent(matchId)}`;
+          }
+        });
+      });
+
+      listContainer!.querySelectorAll<HTMLButtonElement>('[data-action="delete"]').forEach((button) => {
+        button.addEventListener('click', () => {
+          const id = Number(button.dataset.id);
+          const tournament = tournaments.find((t) => t.id === id);
+          if (tournament && confirm(`"${tournament.name}" turnuvasını silmek istediğinize emin misiniz? Bu işlem geri alınamaz.`)) {
+            void deleteTournament(id);
+          }
         });
       });
     } catch (error) {
@@ -350,6 +531,26 @@ export const renderTournamentView = (container: HTMLElement) => {
     }
   };
 
+  const deleteTournament = async (id: number) => {
+    updateStatus(listStatus, 'loading', 'Turnuva siliniyor...');
+    try {
+      const response = await fetch(`/api/tournaments/${id}`, {
+        method: 'DELETE',
+        credentials: 'include'
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+        updateStatus(listStatus, 'error', payload?.message ?? 'Turnuva silinemedi.');
+        return;
+      }
+      updateStatus(listStatus, 'success', 'Turnuva silindi!');
+      await fetchTournaments();
+    } catch (error) {
+      console.warn('Silme hatası:', error);
+      updateStatus(listStatus, 'error', 'Turnuva silinirken hata oluştu.');
+    }
+  };
+
   const createForm = root.querySelector<HTMLFormElement>('[data-form="create"]');
   createForm?.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -384,6 +585,48 @@ export const renderTournamentView = (container: HTMLElement) => {
     }
   });
 
-  // Varsayılan olarak liste sekmesini yükle.
-  void fetchTournaments();
+  // Hash değiştiğinde (turnuva sayfasına dönüldüğünde) bracket'i hemen yenile
+  const handleHashChange = () => {
+    const hash = location.hash.replace(/^#/, '');
+    const [path] = hash.split('?');
+    if (path === '/tournament') {
+      // Turnuva sayfasına dönüldüğünde hemen bracket'i yenile
+      const isListTabActive = !root.querySelector<HTMLElement>('[data-tab-panel="list"]')?.classList.contains('hidden');
+      if (isListTabActive) {
+        void fetchTournaments();
+      }
+    }
+  };
+  window.addEventListener('hashchange', handleHashChange);
+
+  // Eğer belirli bir turnuva hedeflenmişse, liste sekmesini aç
+  if (targetTournamentId) {
+    switchTab('list');
+  }
+
+  // Varsayılan olarak liste sekmesini yükle ve polling başlat
+  void fetchTournaments().then(() => {
+    startPolling();
+  });
+
+  // Sayfa görünürlüğü değiştiğinde polling'i kontrol et (performans için)
+  const handleVisibilityChange = () => {
+    if (document.hidden) {
+      stopPolling();
+    } else {
+      const isListTabActive = !root.querySelector<HTMLElement>('[data-tab-panel="list"]')?.classList.contains('hidden');
+      if (isListTabActive) {
+        void fetchTournaments();
+        startPolling();
+      }
+    }
+  };
+  document.addEventListener('visibilitychange', handleVisibilityChange);
+
+  // Cleanup fonksiyonu döndür (router için)
+  return () => {
+    stopPolling();
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
+    window.removeEventListener('hashchange', handleHashChange);
+  };
 };

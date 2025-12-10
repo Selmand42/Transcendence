@@ -6,11 +6,13 @@ export const initializePongGame = (
     canvas: HTMLCanvasElement,
     scoreAEl: HTMLElement,
     scoreBEl: HTMLElement,
-    statusEl: HTMLElement | null
+    statusEl: HTMLElement | null,
+    onTournamentMatchEnd?: (winner: 'A' | 'B', scoreA: number, scoreB: number) => void,
+    tournamentId?: string
 ) => {
     const pressedKeys = new Set<string>();
     const ctx = canvas.getContext('2d');
-    
+
     if (!ctx) {
         throw new Error("Could not get 2d context");
     }
@@ -20,9 +22,9 @@ export const initializePongGame = (
         canvas.height = window.innerHeight * 0.6;
         canvas.width = canvas.height * RATIO;
     };
-    
+
     resizeCanvas();
-    
+
     // Window resize event listener
     const handleResize = () => {
         resizeCanvas();
@@ -37,7 +39,7 @@ export const initializePongGame = (
         scoreBEl.textContent = "B: 0";
     }
 
-    const game = new Game(ctx, canvas, pressedKeys, scoreAEl, scoreBEl);
+    const game = new Game(ctx, canvas, pressedKeys, scoreAEl, scoreBEl, statusEl, onTournamentMatchEnd, tournamentId);
 
     // Keyboard event listeners
     const handleKeyDown = (event: KeyboardEvent) => {
