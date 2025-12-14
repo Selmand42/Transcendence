@@ -11,6 +11,7 @@ type ProfilePayload = {
   nickname: string;
   provider: 'local' | 'google';
   createdAt: string;
+  avatarUrl: string | null;
 };
 
 type UserStatsPayload = {
@@ -78,10 +79,56 @@ const renderHeader = (nickname: string) => `
   </header>
 `;
 
-const renderAccountSummary = (session: { id: number; nickname: string; provider: 'local' | 'google' }) => `
+const getDefaultAvatarUrl = (nickname: string) => {
+  // İlk harfi al ve büyük harfe çevir
+  const initial = nickname.charAt(0).toUpperCase();
+  // Renkli gradient için hash kullan
+  const colors = [
+    'from-blue-500 to-blue-600',
+    'from-green-500 to-green-600',
+    'from-purple-500 to-purple-600',
+    'from-pink-500 to-pink-600',
+    'from-orange-500 to-orange-600',
+    'from-red-500 to-red-600',
+    'from-indigo-500 to-indigo-600',
+    'from-teal-500 to-teal-600'
+  ];
+  const colorIndex = nickname.charCodeAt(0) % colors.length;
+  return { initial, colorClass: colors[colorIndex] };
+};
+
+const renderAccountSummary = (session: { id: number; nickname: string; provider: 'local' | 'google'; avatarUrl?: string | null }) => {
+  const defaultAvatar = getDefaultAvatarUrl(session.nickname);
+  const avatarUrl = session.avatarUrl || null;
+  
+  return `
   <section class="rounded-3xl bg-white/95 backdrop-blur-xl p-10 shadow-2xl border border-white/20 ring-1 ring-white/10 mb-8">
     <h2 class="text-3xl font-extrabold text-slate-900 mb-6 relative pb-4 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-20 after:h-1 after:bg-gradient-to-r after:from-sky-500 after:to-indigo-600 after:rounded-full">Hesap Özeti</h2>
-    <dl class="space-y-6">
+    <div class="flex flex-col md:flex-row gap-8 mb-8">
+      <!-- Avatar Section -->
+      <div class="flex flex-col items-center md:items-start">
+        <div class="relative group">
+          <div class="w-32 h-32 rounded-full overflow-hidden border-4 border-slate-200 shadow-lg ${avatarUrl ? '' : `bg-gradient-to-br ${defaultAvatar.colorClass}`}" data-avatar-container>
+            ${avatarUrl 
+              ? `<img src="${escapeHtml(avatarUrl)}" alt="Avatar" class="w-full h-full object-cover" data-avatar-image />`
+              : `<div class="w-full h-full flex items-center justify-center text-white text-4xl font-bold" data-avatar-initial>${defaultAvatar.initial}</div>`
+            }
+          </div>
+          <label class="absolute bottom-0 right-0 bg-sky-500 text-white rounded-full p-3 cursor-pointer shadow-lg hover:bg-sky-600 transition-colors group-hover:scale-110 transform" data-avatar-upload-label>
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/>
+            </svg>
+            <input type="file" accept="image/*" class="hidden" data-avatar-input />
+          </label>
+        </div>
+        <p class="mt-4 text-sm text-slate-600 text-center md:text-left">Profil Fotoğrafı</p>
+        <p class="text-xs text-slate-500 text-center md:text-left mt-1">Maksimum 5MB</p>
+      </div>
+      
+      <!-- Account Details -->
+      <div class="flex-1">
+        <dl class="space-y-6">
       <div class="flex flex-col sm:flex-row sm:items-start gap-2 pb-6 border-b border-slate-200 last:border-b-0">
         <dt class="text-sm font-bold text-slate-600 uppercase tracking-wider min-w-[140px]">Kullanıcı ID</dt>
         <dd class="text-slate-900 font-semibold text-lg" data-profile-field="id">#${session.id}</dd>
@@ -115,9 +162,12 @@ const renderAccountSummary = (session: { id: number; nickname: string; provider:
         <dt class="text-sm font-bold text-slate-600 uppercase tracking-wider min-w-[140px]">Katılım Tarihi</dt>
         <dd class="text-slate-900 font-semibold text-lg" data-profile-field="createdAt">-</dd>
       </div>
-    </dl>
+        </dl>
+      </div>
+    </div>
   </section>
-`;
+  `;
+};
 
 const renderStatsCards = (stats: UserStatsPayload) => `
   <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
@@ -329,7 +379,8 @@ export const renderDashboardView = (container: HTMLElement) => {
       id: profile.id,
       email: profile.email,
       nickname: profile.nickname,
-      provider: profile.provider
+      provider: profile.provider,
+      avatarUrl: profile.avatarUrl
     };
     persistSession(session);
     const setText = (selector: string, value: string) => {
@@ -609,6 +660,82 @@ export const renderDashboardView = (container: HTMLElement) => {
     location.hash = '/tournament';
   });
 
+  // Avatar upload handler
+  const avatarInput = root.querySelector<HTMLInputElement>('[data-avatar-input]');
+  avatarInput?.addEventListener('change', async (e) => {
+    const file = (e.target as HTMLInputElement).files?.[0];
+    if (!file) return;
+
+    // Dosya tipini kontrol et
+    if (!file.type.startsWith('image/')) {
+      alert('Sadece resim dosyaları yüklenebilir.');
+      return;
+    }
+
+    // Dosya boyutunu kontrol et (5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Dosya boyutu 5MB\'dan büyük olamaz.');
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const response = await fetch('/api/users/avatar', {
+        method: 'POST',
+        credentials: 'include',
+        body: formData
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ message: 'Avatar yüklenemedi.' }));
+        alert(error.message || 'Avatar yüklenemedi.');
+        return;
+      }
+
+      const result = await response.json() as { avatarUrl: string };
+      
+      // Avatar'ı güncelle
+      const avatarContainer = root.querySelector('[data-avatar-container]');
+      const avatarImage = root.querySelector<HTMLImageElement>('[data-avatar-image]');
+      const avatarInitial = root.querySelector<HTMLDivElement>('[data-avatar-initial]');
+      
+      if (avatarContainer && result.avatarUrl) {
+        if (avatarImage) {
+          avatarImage.src = result.avatarUrl;
+        } else {
+          // Eğer initial varsa, onu kaldır ve img ekle
+          if (avatarInitial) {
+            avatarInitial.remove();
+          }
+          const img = document.createElement('img');
+          img.src = result.avatarUrl;
+          img.alt = 'Avatar';
+          img.className = 'w-full h-full object-cover';
+          img.setAttribute('data-avatar-image', '');
+          avatarContainer.appendChild(img);
+          avatarContainer.classList.remove('bg-gradient-to-br');
+        }
+      }
+
+      // Profil bilgisini yeniden yükle
+      const profileResponse = await fetch('/api/users/profile', { credentials: 'include' });
+      if (profileResponse.ok) {
+        const profile = (await profileResponse.json()) as ProfilePayload;
+        applyProfile(profile);
+      }
+    } catch (error) {
+      console.error('Avatar yükleme hatası:', error);
+      alert('Avatar yüklenirken bir hata oluştu.');
+    } finally {
+      // Input'u temizle
+      if (avatarInput) {
+        avatarInput.value = '';
+      }
+    }
+  });
+
   const logoutButton = root.querySelector<HTMLButtonElement>('[data-action="logout"]');
   logoutButton?.addEventListener('click', async () => {
     const gotoAuth = () => {
@@ -761,4 +888,4 @@ export const renderDashboardView = (container: HTMLElement) => {
       updateNicknameStatus('error', 'Beklenmeyen bir hata oluştu.');
     }
   });
-};
+}

@@ -46,6 +46,10 @@ export const createDatabaseConnection = async () => {
     await db.exec(`ALTER TABLE users ADD COLUMN provider_id TEXT;`);
   }
 
+  if (!columnNames.has('avatar_path')) {
+    await db.exec(`ALTER TABLE users ADD COLUMN avatar_path TEXT;`);
+  }
+
   // Google kayıtları için provider + provider_id çiftini benzersiz kılıyoruz (provider_id boş değilse).
   await db.exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_users_provider_provider_id

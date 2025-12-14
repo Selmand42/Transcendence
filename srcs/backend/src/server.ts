@@ -10,6 +10,9 @@ import { env } from './env.js';
 import { createRateLimiter } from './rate-limit.js';
 import client, { type Registry } from 'prom-client';
 import { registerGameWebSocket } from './game-ws.js';
+import multipart from '@fastify/multipart';
+import path from 'path';
+import { promises as fs } from 'fs';
 
 const ACCESS_COOKIE_NAME = 'session';
 const REFRESH_COOKIE_NAME = 'refresh_session';
@@ -170,6 +173,7 @@ type ProfileResponse = {
   nickname: string;
   provider: 'local' | 'google';
   createdAt: string;
+  avatarUrl: string | null;
 };
 
 type UpdateProfileBody = {
@@ -687,7 +691,10 @@ function registerAuthenticationHelpers(app: FastifyInstance) {
 }
 
 export const buildServer = () => {
-  const app = Fastify({ logger: true });
+  const app = Fastify({ 
+    logger: true,
+    bodyLimit: 5 * 1024 * 1024 // 5MB body limit (avatar upload için)
+  });
   const METRICS_START = Symbol('metrics-start');
 
   app.addHook('onRequest', (request, _reply, done) => {
@@ -723,6 +730,22 @@ export const buildServer = () => {
     windowMs: 60 * 1000,
     errorMessage: 'Çok fazla yenileme isteği gönderildi. Lütfen birkaç saniye sonra tekrar dene.'
   });
+
+  // Multipart plugin'i kaydet (avatar upload için)
+  void app.register(multipart, {
+    limits: {
+      fileSize: 5 * 1024 * 1024 // 5MB max
+    }
+  });
+
+  // Avatar uploads dizinini oluştur
+  const uploadsDir = path.join(process.cwd(), 'data', 'uploads', 'avatars');
+  void fs.mkdir(uploadsDir, { recursive: true }).catch(() => {
+    // Dizin oluşturma hatası loglanır ama uygulama devam eder
+  });
+
+  // uploadsDir'i app instance'ına ekle (endpoint'lerde kullanmak için)
+  (app as any).uploadsDir = uploadsDir;
 
   registerSecurityHeaders(app);
   registerAuthenticationHelpers(app);
@@ -1248,9 +1271,10 @@ export const buildServer = () => {
         nickname: string;
         provider: string;
         created_at: string;
+        avatar_path: string | null;
       }>(
         `
-          SELECT id, email, nickname, provider, created_at
+          SELECT id, email, nickname, provider, created_at, avatar_path
           FROM users
           WHERE id = ?
         `,
@@ -1269,7 +1293,8 @@ export const buildServer = () => {
         email: record.email,
         nickname: record.nickname,
         provider: record.provider === 'google' ? 'google' : 'local',
-        createdAt: record.created_at
+        createdAt: record.created_at,
+        avatarUrl: record.avatar_path ? `/api/avatars/${record.avatar_path}` : null
       };
     }
   );
@@ -1321,9 +1346,10 @@ export const buildServer = () => {
         nickname: string;
         provider: string;
         created_at: string;
+        avatar_path: string | null;
       }>(
         `
-          SELECT id, email, nickname, provider, created_at
+          SELECT id, email, nickname, provider, created_at, avatar_path
           FROM users
           WHERE id = ?
         `,
@@ -1342,8 +1368,136 @@ export const buildServer = () => {
         email: updated.email,
         nickname: updated.nickname,
         provider: updated.provider === 'google' ? 'google' : 'local',
-        createdAt: updated.created_at
+        createdAt: updated.created_at,
+        avatarUrl: updated.avatar_path ? `/api/avatars/${updated.avatar_path}` : null
       };
+    }
+  );
+
+  // Avatar upload endpoint'i
+  app.post<{ Reply: { avatarUrl: string } | ApiErrorResponse }>(
+    '/api/users/avatar',
+    { preHandler: [app.authenticate] },
+    async (request, reply) => {
+      const session = request.session;
+      if (!session) {
+        return reply.status(401).send({
+          error: 'Unauthorized',
+          message: 'Bu işlemi gerçekleştirmek için giriş yapmalısın.'
+        });
+      }
+
+      try {
+        const data = await request.file();
+        if (!data) {
+          return reply.status(400).send({
+            error: 'NoFile',
+            message: 'Dosya yüklenmedi.'
+          });
+        }
+
+        // Dosya tipini kontrol et
+        if (!data.mimetype.startsWith('image/')) {
+          return reply.status(400).send({
+            error: 'InvalidFileType',
+            message: 'Sadece resim dosyaları yüklenebilir.'
+          });
+        }
+
+        // Dosya boyutunu kontrol et (5MB)
+        const buffer = await data.toBuffer();
+        if (buffer.length > 5 * 1024 * 1024) {
+          return reply.status(400).send({
+            error: 'FileTooLarge',
+            message: 'Dosya boyutu 5MB\'dan büyük olamaz.'
+          });
+        }
+
+        // Dosya uzantısını belirle
+        const ext = data.filename.split('.').pop()?.toLowerCase() || 'jpg';
+        const allowedExts = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+        if (!allowedExts.includes(ext)) {
+          return reply.status(400).send({
+            error: 'InvalidFileExtension',
+            message: 'Geçersiz dosya uzantısı. İzin verilen: jpg, jpeg, png, gif, webp'
+          });
+        }
+
+        // Yeni dosya adı oluştur (userId-timestamp.ext)
+        const timestamp = Date.now();
+        const filename = `${session.sub}-${timestamp}.${ext}`;
+        const uploadsDir = (app as any).uploadsDir as string;
+        const filePath = path.join(uploadsDir, filename);
+
+        // Dosyayı kaydet
+        await fs.writeFile(filePath, buffer);
+
+        // Eski avatar'ı sil (varsa)
+        const oldRecord = await request.server.db.get<{ avatar_path: string | null }>(
+          `SELECT avatar_path FROM users WHERE id = ?`,
+          session.sub
+        );
+
+        if (oldRecord?.avatar_path) {
+          const uploadsDir = (app as any).uploadsDir as string;
+          const oldFilePath = path.join(uploadsDir, oldRecord.avatar_path);
+          await fs.unlink(oldFilePath).catch(() => {
+            // Eski dosya silinemezse hata verme
+          });
+        }
+
+        // Veritabanını güncelle
+        await request.server.db.run(
+          `UPDATE users SET avatar_path = ? WHERE id = ?`,
+          filename,
+          session.sub
+        );
+
+        return reply.status(200).send({
+          avatarUrl: `/api/avatars/${filename}`
+        });
+      } catch (error) {
+        request.log.error({ err: error }, 'Avatar yükleme hatası');
+        return reply.status(500).send({
+          error: 'UploadFailed',
+          message: 'Avatar yüklenirken bir hata oluştu.'
+        });
+      }
+    }
+  );
+
+  // Avatar dosyalarını serve et
+  app.get<{ Params: { filename: string } }>(
+    '/api/avatars/:filename',
+    async (request, reply) => {
+      const { filename } = request.params;
+      const uploadsDir = (app as any).uploadsDir as string;
+      
+      // Güvenlik: sadece dosya adı kısmını kullan (path traversal koruması)
+      const safeFilename = path.basename(filename);
+      const filePath = path.join(uploadsDir, safeFilename);
+
+      try {
+        // Dosyanın varlığını kontrol et
+        await fs.access(filePath);
+        
+        // Dosyayı oku ve gönder
+        const fileBuffer = await fs.readFile(filePath);
+        const ext = safeFilename.split('.').pop()?.toLowerCase() || 'jpg';
+        const contentType = ext === 'png' ? 'image/png' 
+          : ext === 'gif' ? 'image/gif'
+          : ext === 'webp' ? 'image/webp'
+          : 'image/jpeg';
+
+        reply.type(contentType);
+        return reply.send(fileBuffer);
+      } catch (error) {
+        // Dosya bulunamadıysa 404 döndür
+        return reply.status(404).send({
+          error: 'AvatarNotFound',
+          message: 'Avatar bulunamadı.'
+        });
+      }
     }
   );
 
