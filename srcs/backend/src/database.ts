@@ -135,6 +135,32 @@ export const createDatabaseConnection = async () => {
     CREATE INDEX IF NOT EXISTS idx_game_sessions_started_at ON game_sessions(started_at);
   `);
 
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS friends (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      friend_id INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id),
+      FOREIGN KEY (friend_id) REFERENCES users(id),
+      UNIQUE(user_id, friend_id)
+    )
+  `);
+
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_friends_user_id ON friends(user_id);
+  `);
+
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_friends_friend_id ON friends(friend_id);
+  `);
+
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_friends_status ON friends(status);
+  `);
+
   return db;
 };
 

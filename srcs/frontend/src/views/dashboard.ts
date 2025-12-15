@@ -215,38 +215,6 @@ const renderStatsCards = (stats: UserStatsPayload) => `
   </div>
 `;
 
-const renderRecentGames = (recentGames: UserStatsPayload['recentGames']) => `
-  <section class="rounded-3xl bg-white/95 backdrop-blur-xl p-10 shadow-2xl border border-white/20 ring-1 ring-white/10 mb-8">
-    <h2 class="text-3xl font-extrabold text-slate-900 mb-6 relative pb-4 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-20 after:h-1 after:bg-gradient-to-r after:from-sky-500 after:to-indigo-600 after:rounded-full">Son Oyunlar</h2>
-    <div class="space-y-4">
-      ${recentGames.length === 0 
-        ? '<p class="text-slate-600 text-lg">Henüz oyun oynamadınız.</p>'
-        : recentGames.map(game => `
-          <div class="flex items-center justify-between p-4 rounded-xl bg-gradient-to-r from-slate-50 to-slate-100 border border-slate-200 hover:shadow-lg transition-shadow cursor-pointer" data-session-id="${game.id}" style="cursor: pointer;">
-            <div class="flex-1">
-              <div class="flex items-center gap-3 mb-2">
-                <span class="font-bold text-slate-900">vs ${escapeHtml(game.opponent)}</span>
-                ${game.gameType === 'tournament' ? `
-                <span class="px-2 py-1 rounded-lg text-xs font-semibold bg-purple-100 text-purple-700">
-                  Turnuva
-                </span>
-                ` : ''}
-              </div>
-              <div class="flex items-center gap-4 text-sm text-slate-600">
-                <span class="font-semibold ${game.won ? 'text-green-600' : 'text-red-600'}">
-                  ${game.won ? '✓ Kazandın' : '✗ Kaybettin'}
-                </span>
-                <span>Skor: <strong>${game.score}</strong></span>
-                <span>${formatDate(game.endedAt)}</span>
-              </div>
-            </div>
-          </div>
-        `).join('')
-      }
-    </div>
-  </section>
-`;
-
 const renderDailyStatsChart = () => `
   <section class="rounded-3xl bg-white/95 backdrop-blur-xl p-10 shadow-2xl border border-white/20 ring-1 ring-white/10 mb-8">
     <h2 class="text-3xl font-extrabold text-slate-900 mb-6 relative pb-4 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-20 after:h-1 after:bg-gradient-to-r after:from-sky-500 after:to-indigo-600 after:rounded-full">Bugünün Aktivitesi</h2>
@@ -338,11 +306,47 @@ const renderGameHistory = (sessions: GameSessionPayload[], pagination: { page: n
   </section>
 `;
 
-const renderTournamentSection = () => `
-  <section class="rounded-3xl bg-white/95 backdrop-blur-xl p-10 shadow-2xl border border-white/20 ring-1 ring-white/10">
-    <h2 class="text-3xl font-extrabold text-slate-900 mb-6 relative pb-4 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-20 after:h-1 after:bg-gradient-to-r after:from-sky-500 after:to-indigo-600 after:rounded-full">Turnuva / Oyun Durumu</h2>
-    <p class="text-slate-600 text-lg leading-relaxed">Turnuva sistemi bu alanda listelenecek. Şimdilik Play Now ile Pong'a geçebilirsin.</p>
+const renderFriendsSection = () => `
+  <section id="friends-section" class="rounded-3xl bg-white/95 backdrop-blur-xl p-10 shadow-2xl border border-white/20 ring-1 ring-white/10 mb-8">
+    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+      <h2 class="text-3xl font-extrabold text-slate-900 relative pb-4 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-20 after:h-1 after:bg-gradient-to-r after:from-sky-500 after:to-indigo-600 after:rounded-full">Arkadaşlar</h2>
+      <button class="px-6 py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-sky-500 to-indigo-600 text-white transition-all duration-300 hover:from-sky-600 hover:to-indigo-700 hover:shadow-lg hover:shadow-sky-500/50 hover:scale-105 transform" type="button" data-action="open-friend-search">Arkadaş Ekle</button>
+    </div>
+    <div id="friends-content">
+      <div class="text-center py-12">
+        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-500 mx-auto"></div>
+        <p class="mt-4 text-slate-400">Arkadaşlar yükleniyor...</p>
+      </div>
+    </div>
   </section>
+
+  <!-- Friend Search Modal -->
+  <div id="friend-search-modal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+      <div class="sticky top-0 bg-white border-b border-slate-200 p-6 flex justify-between items-center">
+        <h3 class="text-2xl font-bold text-slate-900">Arkadaş Ara</h3>
+        <button class="text-slate-400 hover:text-slate-600 transition-colors" type="button" data-action="close-friend-search">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+      <div class="p-6">
+        <div class="mb-6">
+          <input 
+            type="text" 
+            id="friend-search-input" 
+            placeholder="Kullanıcı adı ara..." 
+            class="w-full rounded-xl border-2 border-slate-300 bg-white/50 backdrop-blur-sm px-5 py-4 focus:ring-4 focus:ring-sky-500/20 focus:border-sky-500 outline-none transition-all duration-200"
+            data-action="search-users"
+          />
+        </div>
+        <div id="friend-search-results" class="space-y-3">
+          <p class="text-center text-slate-500 py-8">Arama yapmak için yukarıdaki alana kullanıcı adı yazın...</p>
+        </div>
+      </div>
+    </div>
+  </div>
 `;
 
 export const renderDashboardView = (container: HTMLElement) => {
@@ -367,7 +371,7 @@ export const renderDashboardView = (container: HTMLElement) => {
           <p class="mt-4 text-slate-400">İstatistikler yükleniyor...</p>
         </div>
       </div>
-      ${renderTournamentSection()}
+      ${renderFriendsSection()}
     </div>
   `;
 
@@ -420,125 +424,144 @@ export const renderDashboardView = (container: HTMLElement) => {
       // İstatistik bölümünü render et
       statsSection.innerHTML = `
         ${renderStatsCards(stats)}
-        ${renderRecentGames(stats.recentGames)}
         ${renderDailyStatsChart()}
         ${renderWeeklyStatsChart()}
         ${renderGameHistory(sessionsData.sessions, sessionsData.pagination, session.nickname)}
       `;
 
       // Bugünün aktivite grafiği oluştur (kazanma/kaybetme pie chart)
-      const dailyChartCanvas = root.querySelector<HTMLCanvasElement>('#dailyStatsChart');
+      const dailyChartCanvas = statsSection.querySelector<HTMLCanvasElement>('#dailyStatsChart');
       if (dailyChartCanvas) {
         const ctx = dailyChartCanvas.getContext('2d');
         if (ctx) {
           const hasGames = stats.dailyStats.games > 0;
-          new Chart(ctx, {
-            type: 'pie',
-            data: {
-              labels: ['Kazanma', 'Kaybetme'],
-              datasets: [
-                {
-                  data: hasGames 
-                    ? [stats.dailyStats.wins, stats.dailyStats.losses]
-                    : [0, 0],
-                  backgroundColor: [
-                    'rgba(34, 197, 94, 0.8)',
-                    'rgba(239, 68, 68, 0.8)'
-                  ],
-                  borderColor: [
-                    'rgb(34, 197, 94)',
-                    'rgb(239, 68, 68)'
-                  ],
-                  borderWidth: 2
-                }
-              ]
-            },
-            options: {
-              responsive: true,
-              maintainAspectRatio: false,
-              plugins: {
-                legend: {
-                  position: 'bottom',
-                  labels: {
-                    padding: 15,
-                    font: {
-                      size: 14,
-                      weight: 'bold'
-                    }
+          const wins = stats.dailyStats.wins || 0;
+          const losses = stats.dailyStats.losses || 0;
+          
+          // Eğer hiç oyun yoksa, boş bir chart göster
+          if (!hasGames || (wins === 0 && losses === 0)) {
+            // Canvas container'ı bul ve mesaj göster
+            const canvasContainer = dailyChartCanvas.parentElement;
+            if (canvasContainer) {
+              canvasContainer.innerHTML = '<p class="text-center text-slate-500 py-8">Bugün henüz oyun oynamadınız.</p>';
+            }
+          } else {
+            new Chart(ctx, {
+              type: 'pie',
+              data: {
+                labels: ['Kazanma', 'Kaybetme'],
+                datasets: [
+                  {
+                    data: [wins, losses],
+                    backgroundColor: [
+                      'rgba(34, 197, 94, 0.8)',
+                      'rgba(239, 68, 68, 0.8)'
+                    ],
+                    borderColor: [
+                      'rgb(34, 197, 94)',
+                      'rgb(239, 68, 68)'
+                    ],
+                    borderWidth: 2
                   }
-                },
-                tooltip: {
-                  callbacks: {
-                    label: function(context) {
-                      const label = context.label || '';
-                      const value = context.parsed || 0;
-                      const total = context.dataset.data.reduce((a: number, b: number) => a + b, 0);
-                      const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
-                      return `${label}: ${value} (${percentage}%)`;
+                ]
+              },
+              options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                  legend: {
+                    position: 'bottom',
+                    labels: {
+                      padding: 15,
+                      font: {
+                        size: 14,
+                        weight: 'bold'
+                      }
+                    }
+                  },
+                  tooltip: {
+                    callbacks: {
+                      label: function(context) {
+                        const label = context.label || '';
+                        const value = context.parsed || 0;
+                        const total = context.dataset.data.reduce((a: number, b: number) => a + b, 0);
+                        const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
+                        return `${label}: ${value} (${percentage}%)`;
+                      }
                     }
                   }
                 }
               }
-            }
-          });
+            });
+          }
         }
       }
 
       // Haftalık aktivite grafiği oluştur (kazanma/kaybetme pie chart - son 1 hafta)
-      const weeklyChartCanvas = root.querySelector<HTMLCanvasElement>('#weeklyStatsChart');
+      const weeklyChartCanvas = statsSection.querySelector<HTMLCanvasElement>('#weeklyStatsChart');
       if (weeklyChartCanvas) {
         const ctx = weeklyChartCanvas.getContext('2d');
         if (ctx) {
           const hasGames = stats.weeklyStats.games > 0;
-          new Chart(ctx, {
-            type: 'pie',
-            data: {
-              labels: ['Kazanma', 'Kaybetme'],
-              datasets: [
-                {
-                  data: hasGames 
-                    ? [stats.weeklyStats.wins, stats.weeklyStats.losses]
-                    : [0, 0],
-                  backgroundColor: [
-                    'rgba(34, 197, 94, 0.8)',
-                    'rgba(239, 68, 68, 0.8)'
-                  ],
-                  borderColor: [
-                    'rgb(34, 197, 94)',
-                    'rgb(239, 68, 68)'
-                  ],
-                  borderWidth: 2
-                }
-              ]
-            },
-            options: {
-              responsive: true,
-              maintainAspectRatio: false,
-              plugins: {
-                legend: {
-                  position: 'bottom',
-                  labels: {
-                    padding: 15,
-                    font: {
-                      size: 14,
-                      weight: 'bold'
-                    }
+          const wins = stats.weeklyStats.wins || 0;
+          const losses = stats.weeklyStats.losses || 0;
+          
+          // Eğer hiç oyun yoksa, boş bir chart göster
+          if (!hasGames || (wins === 0 && losses === 0)) {
+            // Canvas container'ı bul ve mesaj göster
+            const canvasContainer = weeklyChartCanvas.parentElement;
+            if (canvasContainer) {
+              canvasContainer.innerHTML = '<p class="text-center text-slate-500 py-8">Son 1 haftada henüz oyun oynamadınız.</p>';
+            }
+          } else {
+            new Chart(ctx, {
+              type: 'pie',
+              data: {
+                labels: ['Kazanma', 'Kaybetme'],
+                datasets: [
+                  {
+                    data: [wins, losses],
+                    backgroundColor: [
+                      'rgba(34, 197, 94, 0.8)',
+                      'rgba(239, 68, 68, 0.8)'
+                    ],
+                    borderColor: [
+                      'rgb(34, 197, 94)',
+                      'rgb(239, 68, 68)'
+                    ],
+                    borderWidth: 2
                   }
-                },
-                tooltip: {
-                  callbacks: {
-                    label: function(context) {
-                      const label = context.label || '';
-                      const value = context.parsed || 0;
-                      const total = context.dataset.data.reduce((a: number, b: number) => a + b, 0);
-                      const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
-                      return `${label}: ${value} (${percentage}%)`;
+                ]
+              },
+              options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                  legend: {
+                    position: 'bottom',
+                    labels: {
+                      padding: 15,
+                      font: {
+                        size: 14,
+                        weight: 'bold'
+                      }
+                    }
+                  },
+                  tooltip: {
+                    callbacks: {
+                      label: function(context) {
+                        const label = context.label || '';
+                        const value = context.parsed || 0;
+                        const total = context.dataset.data.reduce((a: number, b: number) => a + b, 0);
+                        const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
+                        return `${label}: ${value} (${percentage}%)`;
+                      }
                     }
                   }
                 }
               }
-            }
-          });
+            });
+          }
         }
       }
 
@@ -595,16 +618,6 @@ export const renderDashboardView = (container: HTMLElement) => {
         if (currentPage < sessionsData.pagination.totalPages) loadGameSessions(currentPage + 1);
       });
 
-      // Son oyunlar listesine tıklanabilirlik ekle
-      root.querySelectorAll('[data-session-id]').forEach(element => {
-        element.addEventListener('click', (e) => {
-          const sessionId = (e.currentTarget as HTMLElement).getAttribute('data-session-id');
-          if (sessionId) {
-            location.hash = `/game-session?id=${sessionId}`;
-          }
-        });
-      });
-
       // Oyun geçmişi tablosuna tıklanabilirlik ekle
       const setupSessionClickHandlers = () => {
         root.querySelectorAll('[data-session-id]').forEach(element => {
@@ -649,6 +662,395 @@ export const renderDashboardView = (container: HTMLElement) => {
 
   // İstatistikleri yükle
   void loadStats();
+
+  // Friends yükleme ve yönetimi
+  type FriendPayload = {
+    id: number;
+    userId: number;
+    friendId: number;
+    friendNickname: string;
+    friendAvatarUrl: string | null;
+    status: 'pending' | 'accepted' | 'rejected';
+    createdAt: string;
+    updatedAt: string;
+  };
+
+  type FriendsPayload = {
+    friends: FriendPayload[];
+    requests: {
+      sent: FriendPayload[];
+      received: FriendPayload[];
+    };
+  };
+
+  type SearchUserPayload = {
+    id: number;
+    nickname: string;
+    avatarUrl: string | null;
+    isFriend: boolean;
+    friendStatus: 'none' | 'pending' | 'accepted' | 'rejected';
+  };
+
+  const renderFriendItem = (friend: FriendPayload, type: 'friend' | 'sent' | 'received') => {
+    const defaultAvatar = getDefaultAvatarUrl(friend.friendNickname);
+    const avatarUrl = friend.friendAvatarUrl || null;
+    
+    return `
+      <div class="flex items-center justify-between p-4 rounded-xl border-2 border-slate-200 hover:border-sky-300 transition-colors">
+        <div class="flex items-center gap-4 flex-1 cursor-pointer" data-action="view-profile" data-user-id="${friend.friendId}" style="cursor: pointer;">
+          <div class="w-12 h-12 rounded-full overflow-hidden border-2 border-slate-200 ${avatarUrl ? '' : `bg-gradient-to-br ${defaultAvatar.colorClass}`}" data-avatar-container>
+            ${avatarUrl 
+              ? `<img src="${escapeHtml(avatarUrl)}" alt="${escapeHtml(friend.friendNickname)}" class="w-full h-full object-cover" />`
+              : `<div class="w-full h-full flex items-center justify-center text-white text-lg font-bold">${defaultAvatar.initial}</div>`
+            }
+          </div>
+          <div class="flex-1">
+            <p class="font-semibold text-slate-900">${escapeHtml(friend.friendNickname)}</p>
+            ${type === 'sent' ? '<p class="text-sm text-slate-500">Gönderilen istek</p>' : ''}
+            ${type === 'received' ? '<p class="text-sm text-slate-500">Gelen istek</p>' : ''}
+          </div>
+        </div>
+        <div class="flex gap-2">
+          ${type === 'received' ? `
+            <button class="px-4 py-2 rounded-lg bg-green-500 text-white font-semibold text-sm hover:bg-green-600 transition-colors" data-action="accept-friend" data-friend-id="${friend.id}">
+              Kabul Et
+            </button>
+            <button class="px-4 py-2 rounded-lg bg-red-500 text-white font-semibold text-sm hover:bg-red-600 transition-colors" data-action="reject-friend" data-friend-id="${friend.id}">
+              Reddet
+            </button>
+          ` : ''}
+          ${type === 'friend' ? `
+            <button class="px-4 py-2 rounded-lg bg-red-500 text-white font-semibold text-sm hover:bg-red-600 transition-colors" data-action="remove-friend" data-friend-id="${friend.friendId}">
+              Kaldır
+            </button>
+          ` : ''}
+          ${type === 'sent' ? `
+            <span class="px-4 py-2 rounded-lg bg-slate-200 text-slate-600 font-semibold text-sm">
+              Beklemede
+            </span>
+          ` : ''}
+        </div>
+      </div>
+    `;
+  };
+
+  const loadFriends = async () => {
+    const friendsSection = root.querySelector('#friends-content');
+    if (!friendsSection) return;
+
+    try {
+      const response = await fetch('/api/friends', { credentials: 'include' });
+      if (!response.ok) {
+        throw new Error('Arkadaşlar yüklenemedi');
+      }
+
+      const data = (await response.json()) as FriendsPayload;
+
+      if (data.friends.length === 0 && data.requests.sent.length === 0 && data.requests.received.length === 0) {
+        friendsSection.innerHTML = `
+          <div class="text-center py-12">
+            <svg class="w-16 h-16 text-slate-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-3-3h-4a3 3 0 00-3 3v2zm7-6V9a6 6 0 00-6-6H8a6 6 0 00-6 6v5m6 6h8a3 3 0 003-3V9a3 3 0 00-3-3h-8a3 3 0 00-3 3v8a3 3 0 003 3z"/>
+            </svg>
+            <p class="text-slate-600 text-lg mb-4">Henüz arkadaşınız yok</p>
+            <p class="text-slate-500">"Arkadaş Ekle" butonuna tıklayarak arkadaş ekleyebilirsiniz.</p>
+          </div>
+        `;
+        return;
+      }
+
+      let html = '';
+
+      // Gelen istekler
+      if (data.requests.received.length > 0) {
+        html += `
+          <div class="mb-6">
+            <h3 class="text-xl font-bold text-slate-900 mb-4">Gelen İstekler (${data.requests.received.length})</h3>
+            <div class="space-y-3">
+              ${data.requests.received.map(friend => renderFriendItem(friend, 'received')).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      // Arkadaşlar
+      if (data.friends.length > 0) {
+        html += `
+          <div class="mb-6">
+            <h3 class="text-xl font-bold text-slate-900 mb-4">Arkadaşlarım (${data.friends.length})</h3>
+            <div class="space-y-3">
+              ${data.friends.map(friend => renderFriendItem(friend, 'friend')).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      // Gönderilen istekler
+      if (data.requests.sent.length > 0) {
+        html += `
+          <div class="mb-6">
+            <h3 class="text-xl font-bold text-slate-900 mb-4">Gönderilen İstekler (${data.requests.sent.length})</h3>
+            <div class="space-y-3">
+              ${data.requests.sent.map(friend => renderFriendItem(friend, 'sent')).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      friendsSection.innerHTML = html;
+
+      // Profil görüntüleme event listener'ları
+      friendsSection.querySelectorAll('[data-action="view-profile"]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          // Eğer buton tıklanmışsa (remove, accept, reject butonları) profil sayfasına gitme
+          const target = e.target as HTMLElement;
+          if (target.tagName === 'BUTTON' || target.closest('button')) {
+            return;
+          }
+          const userId = (e.currentTarget as HTMLElement).getAttribute('data-user-id');
+          if (userId) {
+            location.hash = `/user?id=${userId}`;
+          }
+        });
+      });
+
+      // Event listener'ları ekle
+      friendsSection.querySelectorAll('[data-action="accept-friend"]').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const friendId = (e.currentTarget as HTMLElement).getAttribute('data-friend-id');
+          if (!friendId) return;
+          
+          try {
+            const response = await fetch(`/api/friends/accept/${friendId}`, {
+              method: 'POST',
+              credentials: 'include'
+            });
+            
+            if (response.ok) {
+              await loadFriends();
+            } else {
+              const error = await response.json().catch(() => ({ message: 'İstek kabul edilemedi.' }));
+              alert(error.message || 'İstek kabul edilemedi.');
+            }
+          } catch (error) {
+            console.error('Arkadaşlık isteği kabul edilemedi:', error);
+            alert('Bir hata oluştu.');
+          }
+        });
+      });
+
+      friendsSection.querySelectorAll('[data-action="reject-friend"]').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const friendId = (e.currentTarget as HTMLElement).getAttribute('data-friend-id');
+          if (!friendId) return;
+          
+          try {
+            const response = await fetch(`/api/friends/reject/${friendId}`, {
+              method: 'POST',
+              credentials: 'include'
+            });
+            
+            if (response.ok) {
+              await loadFriends();
+            } else {
+              const error = await response.json().catch(() => ({ message: 'İstek reddedilemedi.' }));
+              alert(error.message || 'İstek reddedilemedi.');
+            }
+          } catch (error) {
+            console.error('Arkadaşlık isteği reddedilemedi:', error);
+            alert('Bir hata oluştu.');
+          }
+        });
+      });
+
+      friendsSection.querySelectorAll('[data-action="remove-friend"]').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const friendId = (e.currentTarget as HTMLElement).getAttribute('data-friend-id');
+          if (!friendId) return;
+          
+          if (!confirm('Bu kişiyi arkadaş listenizden kaldırmak istediğinize emin misiniz?')) {
+            return;
+          }
+          
+          try {
+            const response = await fetch(`/api/friends/${friendId}`, {
+              method: 'DELETE',
+              credentials: 'include'
+            });
+            
+            if (response.ok) {
+              await loadFriends();
+            } else {
+              const error = await response.json().catch(() => ({ message: 'Arkadaş kaldırılamadı.' }));
+              alert(error.message || 'Arkadaş kaldırılamadı.');
+            }
+          } catch (error) {
+            console.error('Arkadaş kaldırılamadı:', error);
+            alert('Bir hata oluştu.');
+          }
+        });
+      });
+
+    } catch (error) {
+      console.error('Arkadaşlar yüklenemedi:', error);
+      friendsSection.innerHTML = `
+        <div class="rounded-xl bg-red-50 border-2 border-red-200 p-8 text-center">
+          <p class="text-red-700 font-semibold">Arkadaşlar yüklenirken bir hata oluştu.</p>
+        </div>
+      `;
+    }
+  };
+
+  void loadFriends();
+
+  // Friend search modal
+  const openFriendSearchBtn = root.querySelector('[data-action="open-friend-search"]');
+  const closeFriendSearchBtn = root.querySelector('[data-action="close-friend-search"]');
+  const friendSearchModal = root.querySelector('#friend-search-modal');
+  const friendSearchInput = root.querySelector<HTMLInputElement>('#friend-search-input');
+  const friendSearchResults = root.querySelector('#friend-search-results');
+
+  let searchTimeout: number | null = null;
+
+  const performUserSearch = async (query: string) => {
+    if (!friendSearchResults) return;
+
+    if (query.length < 2) {
+      friendSearchResults.innerHTML = '<p class="text-center text-slate-500 py-8">Arama yapmak için en az 2 karakter yazın...</p>';
+      return;
+    }
+
+    friendSearchResults.innerHTML = '<div class="text-center py-8"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-500 mx-auto"></div><p class="mt-4 text-slate-400">Aranıyor...</p></div>';
+
+    try {
+      const response = await fetch(`/api/users/search?q=${encodeURIComponent(query)}`, {
+        credentials: 'include'
+      });
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          clearSession();
+          location.hash = '/auth';
+          return;
+        }
+        const errorData = await response.json().catch(() => ({ message: 'Arama yapılamadı' }));
+        throw new Error(errorData.message || 'Arama yapılamadı');
+      }
+
+      const data = (await response.json()) as { users: SearchUserPayload[] };
+
+      if (data.users.length === 0) {
+        friendSearchResults.innerHTML = '<p class="text-center text-slate-500 py-8">Kullanıcı bulunamadı.</p>';
+        return;
+      }
+
+      friendSearchResults.innerHTML = data.users.map(user => {
+        const defaultAvatar = getDefaultAvatarUrl(user.nickname);
+        const avatarUrl = user.avatarUrl || null;
+        
+        let buttonHtml = '';
+        if (user.friendStatus === 'none' || user.friendStatus === 'rejected') {
+          buttonHtml = `<button class="px-4 py-2 rounded-lg bg-sky-500 text-white font-semibold text-sm hover:bg-sky-600 transition-colors" data-action="add-friend" data-user-id="${user.id}">Arkadaş Ekle</button>`;
+        } else if (user.friendStatus === 'pending') {
+          buttonHtml = `<span class="px-4 py-2 rounded-lg bg-slate-200 text-slate-600 font-semibold text-sm">İstek Gönderildi</span>`;
+        } else if (user.friendStatus === 'accepted') {
+          buttonHtml = `<span class="px-4 py-2 rounded-lg bg-green-200 text-green-700 font-semibold text-sm">Arkadaş</span>`;
+        }
+
+        return `
+          <div class="flex items-center justify-between p-4 rounded-xl border-2 border-slate-200 hover:border-sky-300 transition-colors">
+            <div class="flex items-center gap-4 flex-1">
+              <div class="w-12 h-12 rounded-full overflow-hidden border-2 border-slate-200 ${avatarUrl ? '' : `bg-gradient-to-br ${defaultAvatar.colorClass}`}">
+                ${avatarUrl 
+                  ? `<img src="${escapeHtml(avatarUrl)}" alt="${escapeHtml(user.nickname)}" class="w-full h-full object-cover" />`
+                  : `<div class="w-full h-full flex items-center justify-center text-white text-lg font-bold">${defaultAvatar.initial}</div>`
+                }
+              </div>
+              <div>
+                <p class="font-semibold text-slate-900">${escapeHtml(user.nickname)}</p>
+              </div>
+            </div>
+            ${buttonHtml}
+          </div>
+        `;
+      }).join('');
+
+      // Add friend button event listeners
+      friendSearchResults.querySelectorAll('[data-action="add-friend"]').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const userId = (e.currentTarget as HTMLElement).getAttribute('data-user-id');
+          if (!userId) return;
+          
+          try {
+            const response = await fetch('/api/friends/add', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
+              body: JSON.stringify({ friendId: Number(userId) })
+            });
+            
+            if (response.ok) {
+              // Search'i yenile
+              if (friendSearchInput) {
+                performUserSearch(friendSearchInput.value);
+              }
+              // Friends listesini yenile
+              await loadFriends();
+            } else {
+              const error = await response.json().catch(() => ({ message: 'Arkadaş eklenemedi.' }));
+              alert(error.message || 'Arkadaş eklenemedi.');
+            }
+          } catch (error) {
+            console.error('Arkadaş eklenemedi:', error);
+            alert('Bir hata oluştu.');
+          }
+        });
+      });
+
+    } catch (error) {
+      console.error('Kullanıcı arama hatası:', error);
+      friendSearchResults.innerHTML = '<p class="text-center text-red-500 py-8">Arama yapılırken bir hata oluştu.</p>';
+    }
+  };
+
+  openFriendSearchBtn?.addEventListener('click', () => {
+    if (friendSearchModal) {
+      friendSearchModal.classList.remove('hidden');
+      friendSearchInput?.focus();
+    }
+  });
+
+  closeFriendSearchBtn?.addEventListener('click', () => {
+    if (friendSearchModal) {
+      friendSearchModal.classList.add('hidden');
+      if (friendSearchInput) {
+        friendSearchInput.value = '';
+      }
+      if (friendSearchResults) {
+        friendSearchResults.innerHTML = '<p class="text-center text-slate-500 py-8">Arama yapmak için yukarıdaki alana kullanıcı adı yazın...</p>';
+      }
+    }
+  });
+
+  // Modal dışına tıklanınca kapat
+  friendSearchModal?.addEventListener('click', (e) => {
+    if (e.target === friendSearchModal) {
+      (closeFriendSearchBtn as HTMLButtonElement)?.click();
+    }
+  });
+
+  // Search input event listener
+  friendSearchInput?.addEventListener('input', (e) => {
+    const query = (e.target as HTMLInputElement).value.trim();
+    
+    if (searchTimeout) {
+      clearTimeout(searchTimeout);
+    }
+    
+    searchTimeout = window.setTimeout(() => {
+      performUserSearch(query);
+    }, 500);
+  });
 
   const playButton = root.querySelector<HTMLButtonElement>('[data-action="play"]');
   playButton?.addEventListener('click', () => {

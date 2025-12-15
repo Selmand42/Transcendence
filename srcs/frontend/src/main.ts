@@ -6,6 +6,7 @@ import { renderDashboardView } from './views/dashboard';
 import { renderGameView } from './views/game';
 import { renderTournamentView } from './views/tournament';
 import { renderGameSessionView } from './views/game-session';
+import { renderUserProfileView } from './views/user-profile';
 import { loadSession } from './utils/storage';
 
 const root = document.getElementById('app');
@@ -20,6 +21,7 @@ router.register({ path: '/dashboard', render: renderDashboardView });
 router.register({ path: '/game', render: renderGameView });
 router.register({ path: '/tournament', render: renderTournamentView });
 router.register({ path: '/game-session', render: renderGameSessionView });
+router.register({ path: '/user', render: renderUserProfileView });
 
 // Sayfa yenilemelerinde oyuna/tur nuvaya doğrudan geri düşmeyi engelle
 const session = loadSession();
