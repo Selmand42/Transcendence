@@ -1,5 +1,3 @@
-# Compose sürümünü sabitleyerek yeni Docker özelliklerinin tutarlı çalışmasını sağlıyoruz.
-version: "3.9"
 services:
   backend:
     # Fastify tabanlı API servisimiz; docker/backend/Dockerfile üzerinden build ediyoruz.

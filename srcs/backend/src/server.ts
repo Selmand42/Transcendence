@@ -10,6 +10,9 @@ import { env } from './env.js';
 import { createRateLimiter } from './rate-limit.js';
 import client, { type Registry } from 'prom-client';
 import { registerGameWebSocket } from './game-ws.js';
+import multipart from '@fastify/multipart';
+import path from 'path';
+import { promises as fs } from 'fs';
 
 const ACCESS_COOKIE_NAME = 'session';
 const REFRESH_COOKIE_NAME = 'refresh_session';
@@ -170,10 +173,44 @@ type ProfileResponse = {
   nickname: string;
   provider: 'local' | 'google';
   createdAt: string;
+  avatarUrl: string | null;
 };
 
 type UpdateProfileBody = {
   nickname: string;
+};
+
+type FriendResponse = {
+  id: number;
+  userId: number;
+  friendId: number;
+  friendNickname: string;
+  friendAvatarUrl: string | null;
+  status: 'pending' | 'accepted' | 'rejected';
+  createdAt: string;
+  updatedAt: string;
+};
+
+type FriendsListResponse = {
+  friends: FriendResponse[];
+  requests: {
+    sent: FriendResponse[];
+    received: FriendResponse[];
+  };
+};
+
+type AddFriendBody = {
+  friendId: number;
+};
+
+type SearchUsersResponse = {
+  users: Array<{
+    id: number;
+    nickname: string;
+    avatarUrl: string | null;
+    isFriend: boolean;
+    friendStatus: 'none' | 'pending' | 'accepted' | 'rejected';
+  }>;
 };
 
 type CreateTournamentBody = {
@@ -687,7 +724,10 @@ function registerAuthenticationHelpers(app: FastifyInstance) {
 }
 
 export const buildServer = () => {
-  const app = Fastify({ logger: true });
+  const app = Fastify({ 
+    logger: true,
+    bodyLimit: 5 * 1024 * 1024 // 5MB body limit (avatar upload için)
+  });
   const METRICS_START = Symbol('metrics-start');
 
   app.addHook('onRequest', (request, _reply, done) => {
@@ -723,6 +763,22 @@ export const buildServer = () => {
     windowMs: 60 * 1000,
     errorMessage: 'Çok fazla yenileme isteği gönderildi. Lütfen birkaç saniye sonra tekrar dene.'
   });
+
+  // Multipart plugin'i kaydet (avatar upload için)
+  void app.register(multipart, {
+    limits: {
+      fileSize: 5 * 1024 * 1024 // 5MB max
+    }
+  });
+
+  // Avatar uploads dizinini oluştur
+  const uploadsDir = path.join(process.cwd(), 'data', 'uploads', 'avatars');
+  void fs.mkdir(uploadsDir, { recursive: true }).catch(() => {
+    // Dizin oluşturma hatası loglanır ama uygulama devam eder
+  });
+
+  // uploadsDir'i app instance'ına ekle (endpoint'lerde kullanmak için)
+  (app as any).uploadsDir = uploadsDir;
 
   registerSecurityHeaders(app);
   registerAuthenticationHelpers(app);
@@ -1248,9 +1304,10 @@ export const buildServer = () => {
         nickname: string;
         provider: string;
         created_at: string;
+        avatar_path: string | null;
       }>(
         `
-          SELECT id, email, nickname, provider, created_at
+          SELECT id, email, nickname, provider, created_at, avatar_path
           FROM users
           WHERE id = ?
         `,
@@ -1269,7 +1326,8 @@ export const buildServer = () => {
         email: record.email,
         nickname: record.nickname,
         provider: record.provider === 'google' ? 'google' : 'local',
-        createdAt: record.created_at
+        createdAt: record.created_at,
+        avatarUrl: record.avatar_path ? `/api/avatars/${record.avatar_path}` : null
       };
     }
   );
@@ -1321,9 +1379,10 @@ export const buildServer = () => {
         nickname: string;
         provider: string;
         created_at: string;
+        avatar_path: string | null;
       }>(
         `
-          SELECT id, email, nickname, provider, created_at
+          SELECT id, email, nickname, provider, created_at, avatar_path
           FROM users
           WHERE id = ?
         `,
@@ -1342,8 +1401,136 @@ export const buildServer = () => {
         email: updated.email,
         nickname: updated.nickname,
         provider: updated.provider === 'google' ? 'google' : 'local',
-        createdAt: updated.created_at
+        createdAt: updated.created_at,
+        avatarUrl: updated.avatar_path ? `/api/avatars/${updated.avatar_path}` : null
       };
+    }
+  );
+
+  // Avatar upload endpoint'i
+  app.post<{ Reply: { avatarUrl: string } | ApiErrorResponse }>(
+    '/api/users/avatar',
+    { preHandler: [app.authenticate] },
+    async (request, reply) => {
+      const session = request.session;
+      if (!session) {
+        return reply.status(401).send({
+          error: 'Unauthorized',
+          message: 'Bu işlemi gerçekleştirmek için giriş yapmalısın.'
+        });
+      }
+
+      try {
+        const data = await request.file();
+        if (!data) {
+          return reply.status(400).send({
+            error: 'NoFile',
+            message: 'Dosya yüklenmedi.'
+          });
+        }
+
+        // Dosya tipini kontrol et
+        if (!data.mimetype.startsWith('image/')) {
+          return reply.status(400).send({
+            error: 'InvalidFileType',
+            message: 'Sadece resim dosyaları yüklenebilir.'
+          });
+        }
+
+        // Dosya boyutunu kontrol et (5MB)
+        const buffer = await data.toBuffer();
+        if (buffer.length > 5 * 1024 * 1024) {
+          return reply.status(400).send({
+            error: 'FileTooLarge',
+            message: 'Dosya boyutu 5MB\'dan büyük olamaz.'
+          });
+        }
+
+        // Dosya uzantısını belirle
+        const ext = data.filename.split('.').pop()?.toLowerCase() || 'jpg';
+        const allowedExts = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+        if (!allowedExts.includes(ext)) {
+          return reply.status(400).send({
+            error: 'InvalidFileExtension',
+            message: 'Geçersiz dosya uzantısı. İzin verilen: jpg, jpeg, png, gif, webp'
+          });
+        }
+
+        // Yeni dosya adı oluştur (userId-timestamp.ext)
+        const timestamp = Date.now();
+        const filename = `${session.sub}-${timestamp}.${ext}`;
+        const uploadsDir = (app as any).uploadsDir as string;
+        const filePath = path.join(uploadsDir, filename);
+
+        // Dosyayı kaydet
+        await fs.writeFile(filePath, buffer);
+
+        // Eski avatar'ı sil (varsa)
+        const oldRecord = await request.server.db.get<{ avatar_path: string | null }>(
+          `SELECT avatar_path FROM users WHERE id = ?`,
+          session.sub
+        );
+
+        if (oldRecord?.avatar_path) {
+          const uploadsDir = (app as any).uploadsDir as string;
+          const oldFilePath = path.join(uploadsDir, oldRecord.avatar_path);
+          await fs.unlink(oldFilePath).catch(() => {
+            // Eski dosya silinemezse hata verme
+          });
+        }
+
+        // Veritabanını güncelle
+        await request.server.db.run(
+          `UPDATE users SET avatar_path = ? WHERE id = ?`,
+          filename,
+          session.sub
+        );
+
+        return reply.status(200).send({
+          avatarUrl: `/api/avatars/${filename}`
+        });
+      } catch (error) {
+        request.log.error({ err: error }, 'Avatar yükleme hatası');
+        return reply.status(500).send({
+          error: 'UploadFailed',
+          message: 'Avatar yüklenirken bir hata oluştu.'
+        });
+      }
+    }
+  );
+
+  // Avatar dosyalarını serve et
+  app.get<{ Params: { filename: string } }>(
+    '/api/avatars/:filename',
+    async (request, reply) => {
+      const { filename } = request.params;
+      const uploadsDir = (app as any).uploadsDir as string;
+      
+      // Güvenlik: sadece dosya adı kısmını kullan (path traversal koruması)
+      const safeFilename = path.basename(filename);
+      const filePath = path.join(uploadsDir, safeFilename);
+
+      try {
+        // Dosyanın varlığını kontrol et
+        await fs.access(filePath);
+        
+        // Dosyayı oku ve gönder
+        const fileBuffer = await fs.readFile(filePath);
+        const ext = safeFilename.split('.').pop()?.toLowerCase() || 'jpg';
+        const contentType = ext === 'png' ? 'image/png' 
+          : ext === 'gif' ? 'image/gif'
+          : ext === 'webp' ? 'image/webp'
+          : 'image/jpeg';
+
+        reply.type(contentType);
+        return reply.send(fileBuffer);
+      } catch (error) {
+        // Dosya bulunamadıysa 404 döndür
+        return reply.status(404).send({
+          error: 'AvatarNotFound',
+          message: 'Avatar bulunamadı.'
+        });
+      }
     }
   );
 
@@ -1920,7 +2107,1162 @@ export const buildServer = () => {
     }
   );
 
-  registerGameWebSocket(app);
+  // Type tanımlamaları
+  type UserStatsResponse = {
+    totalGames: number;
+    wins: number;
+    losses: number;
+    winRate: number;
+    totalScore: number;
+    avgScore: number;
+    longestWinStreak: number;
+    recentGames: Array<{
+      id: number;
+      opponent: string;
+      won: boolean;
+      score: string;
+      gameType: string;
+      endedAt: string;
+    }>;
+    dailyStats: {
+      games: number;
+      wins: number;
+      losses: number;
+    };
+    weeklyStats: {
+      games: number;
+      wins: number;
+      losses: number;
+    };
+  };
+
+  type GameSessionDetailResponse = {
+    id: number;
+    player1: {
+      id: number | null;
+      nickname: string;
+      score: number;
+    };
+    player2: {
+      id: number | null;
+      nickname: string;
+      score: number;
+    };
+    winner: {
+      id: number | null;
+      nickname: string;
+    };
+    gameType: string;
+    tournamentId: number | null;
+    matchId: string | null;
+    startedAt: string;
+    endedAt: string;
+    duration: number;
+  };
+
+  type GameSessionsResponse = {
+    sessions: Array<{
+      id: number;
+      player1: string;
+      player2: string;
+      winner: string;
+      score: string;
+      gameType: string;
+      tournamentId: number | null;
+      startedAt: string;
+      endedAt: string;
+      duration: number;
+    }>;
+    pagination: {
+      page: number;
+      limit: number;
+      total: number;
+      totalPages: number;
+    };
+  };
+
+  // Kullanıcı istatistikleri endpoint'i
+  app.get<{ Reply: UserStatsResponse | ApiErrorResponse }>(
+    '/api/users/stats',
+    { preHandler: [app.authenticate] },
+    async (request, reply) => {
+      const session = request.session;
+      if (!session) {
+        return reply.status(401).send({
+          error: 'Unauthorized',
+          message: 'Bu işlemi gerçekleştirmek için giriş yapmalısın.'
+        });
+      }
+
+      const userId = session.sub;
+
+      // Toplam oyun sayısı
+      const totalGames = await request.server.db.get<{ count: number }>(`
+        SELECT COUNT(*) as count
+        FROM game_sessions
+        WHERE player1_id = ? OR player2_id = ?
+      `, userId, userId);
+
+      // Kazanılan oyun sayısı
+      const wins = await request.server.db.get<{ count: number }>(`
+        SELECT COUNT(*) as count
+        FROM game_sessions
+        WHERE (player1_id = ? OR player2_id = ?) 
+          AND winner_id = ?
+      `, userId, userId, userId);
+
+      // Kaybedilen oyun sayısı
+      const losses = await request.server.db.get<{ count: number }>(`
+        SELECT COUNT(*) as count
+        FROM game_sessions
+        WHERE (player1_id = ? OR player2_id = ?) 
+          AND (winner_id IS NULL OR winner_id != ?)
+      `, userId, userId, userId);
+
+      // Toplam skor
+      const totalScore = await request.server.db.get<{ total: number }>(`
+        SELECT 
+          COALESCE(SUM(CASE WHEN player1_id = ? THEN player1_score ELSE player2_score END), 0) as total
+        FROM game_sessions
+        WHERE player1_id = ? OR player2_id = ?
+      `, userId, userId, userId);
+
+      // Ortalama skor
+      const avgScore = totalGames?.count 
+        ? Math.round((totalScore?.total || 0) / totalGames.count)
+        : 0;
+
+      // Kazanma oranı
+      const winRate = totalGames?.count 
+        ? Math.round((wins?.count || 0) / totalGames.count * 100)
+        : 0;
+
+      // Son 10 oyun
+      const recentGamesRaw = await request.server.db.all<{
+        id: number;
+        player1_nickname: string;
+        player2_nickname: string;
+        winner_nickname: string;
+        player1_score: number;
+        player2_score: number;
+        game_type: string;
+        ended_at: string;
+      }>(`
+        SELECT 
+          id, player1_nickname, player2_nickname, winner_nickname,
+          player1_score, player2_score, game_type, ended_at
+        FROM game_sessions
+        WHERE player1_id = ? OR player2_id = ?
+        ORDER BY ended_at DESC
+        LIMIT 10
+      `, userId, userId);
+
+      const recentGames = Array.isArray(recentGamesRaw) ? recentGamesRaw : [];
+
+      // Bugünün istatistikleri (kazanma/kaybetme)
+      const todayStats = await request.server.db.get<{
+        games: number;
+        wins: number;
+        losses: number;
+      }>(`
+        SELECT 
+          COUNT(*) as games,
+          SUM(CASE WHEN winner_id = ? THEN 1 ELSE 0 END) as wins,
+          SUM(CASE WHEN (winner_id IS NULL OR winner_id != ?) THEN 1 ELSE 0 END) as losses
+        FROM game_sessions
+        WHERE (player1_id = ? OR player2_id = ?) 
+          AND DATE(ended_at) = DATE('now')
+          AND ended_at IS NOT NULL
+      `, userId, userId, userId, userId);
+
+      const dailyStats = {
+        games: todayStats?.games || 0,
+        wins: todayStats?.wins || 0,
+        losses: todayStats?.losses || 0
+      };
+
+      // Haftalık istatistikler (son 1 hafta - toplam kazanma/kaybetme)
+      const weeklyStatsTotal = await request.server.db.get<{
+        games: number;
+        wins: number;
+        losses: number;
+      }>(`
+        SELECT 
+          COUNT(*) as games,
+          SUM(CASE WHEN winner_id = ? THEN 1 ELSE 0 END) as wins,
+          SUM(CASE WHEN (winner_id IS NULL OR winner_id != ?) THEN 1 ELSE 0 END) as losses
+        FROM game_sessions
+        WHERE (player1_id = ? OR player2_id = ?) 
+          AND ended_at >= datetime('now', '-7 days')
+          AND ended_at IS NOT NULL
+      `, userId, userId, userId, userId);
+
+      const weeklyStats = {
+        games: weeklyStatsTotal?.games || 0,
+        wins: weeklyStatsTotal?.wins || 0,
+        losses: weeklyStatsTotal?.losses || 0
+      };
+
+      // En uzun galibiyet serisi
+      const allGamesRaw = await request.server.db.all<{
+        winner_nickname: string;
+        ended_at: string;
+      }>(`
+        SELECT winner_nickname, ended_at
+        FROM game_sessions
+        WHERE (player1_id = ? OR player2_id = ?)
+          AND ended_at IS NOT NULL
+        ORDER BY ended_at ASC
+      `, userId, userId);
+
+      const allGames = Array.isArray(allGamesRaw) ? allGamesRaw : [];
+      let longestWinStreak = 0;
+      let currentStreak = 0;
+      
+      for (const game of allGames) {
+        if (game.winner_nickname === session.nickname) {
+          currentStreak++;
+          longestWinStreak = Math.max(longestWinStreak, currentStreak);
+        } else {
+          currentStreak = 0;
+        }
+      }
+
+      return {
+        totalGames: totalGames?.count || 0,
+        wins: wins?.count || 0,
+        losses: losses?.count || 0,
+        winRate,
+        totalScore: totalScore?.total || 0,
+        avgScore,
+        longestWinStreak,
+        recentGames: recentGames.map((game: {
+          id: number;
+          player1_nickname: string;
+          player2_nickname: string;
+          winner_nickname: string;
+          player1_score: number;
+          player2_score: number;
+          game_type: string;
+          ended_at: string;
+        }) => ({
+          id: game.id,
+          opponent: game.player1_nickname === session.nickname 
+            ? game.player2_nickname 
+            : game.player1_nickname,
+          won: game.winner_nickname === session.nickname,
+          score: game.player1_nickname === session.nickname
+            ? `${game.player1_score}-${game.player2_score}`
+            : `${game.player2_score}-${game.player1_score}`,
+          gameType: game.game_type,
+          endedAt: game.ended_at
+        })),
+        dailyStats: dailyStats,
+        weeklyStats: weeklyStats
+      };
+    }
+  );
+
+  // Oyun oturumları listesi endpoint'i
+  app.get<{ 
+    Querystring: { page?: string; limit?: string };
+    Reply: GameSessionsResponse | ApiErrorResponse;
+  }>(
+    '/api/game-sessions',
+    { preHandler: [app.authenticate] },
+    async (request, reply) => {
+      const session = request.session;
+      if (!session) {
+        return reply.status(401).send({
+          error: 'Unauthorized',
+          message: 'Bu işlemi gerçekleştirmek için giriş yapmalısın.'
+        });
+      }
+
+      const page = Math.max(1, parseInt(request.query.page || '1'));
+      const limit = Math.min(50, Math.max(10, parseInt(request.query.limit || '20')));
+      const offset = (page - 1) * limit;
+
+      const sessionsRaw = await request.server.db.all<{
+        id: number;
+        player1_nickname: string;
+        player2_nickname: string;
+        winner_nickname: string;
+        player1_score: number;
+        player2_score: number;
+        game_type: string;
+        tournament_id: number | null;
+        started_at: string;
+        ended_at: string;
+        duration_seconds: number;
+      }>(`
+        SELECT 
+          id, player1_nickname, player2_nickname, winner_nickname,
+          player1_score, player2_score, game_type, tournament_id,
+          started_at, ended_at, duration_seconds
+        FROM game_sessions
+        WHERE player1_id = ? OR player2_id = ?
+        ORDER BY ended_at DESC
+        LIMIT ? OFFSET ?
+      `, session.sub, session.sub, limit, offset);
+
+      const sessions = Array.isArray(sessionsRaw) ? sessionsRaw : [];
+
+      const total = await request.server.db.get<{ count: number }>(`
+        SELECT COUNT(*) as count
+        FROM game_sessions
+        WHERE player1_id = ? OR player2_id = ?
+      `, session.sub, session.sub);
+
+      return {
+        sessions: sessions.map((sessionItem: {
+          id: number;
+          player1_nickname: string;
+          player2_nickname: string;
+          winner_nickname: string;
+          player1_score: number;
+          player2_score: number;
+          game_type: string;
+          tournament_id: number | null;
+          started_at: string;
+          ended_at: string;
+          duration_seconds: number;
+        }) => ({
+          id: sessionItem.id,
+          player1: sessionItem.player1_nickname,
+          player2: sessionItem.player2_nickname,
+          winner: sessionItem.winner_nickname,
+          score: `${sessionItem.player1_score}-${sessionItem.player2_score}`,
+          gameType: sessionItem.game_type,
+          tournamentId: sessionItem.tournament_id,
+          startedAt: sessionItem.started_at,
+          endedAt: sessionItem.ended_at,
+          duration: sessionItem.duration_seconds
+        })),
+        pagination: {
+          page,
+          limit,
+          total: total?.count || 0,
+          totalPages: Math.ceil((total?.count || 0) / limit)
+        }
+      };
+    }
+  );
+
+  // Offline oyun oturumu kaydetme endpoint'i
+  type CreateOfflineGameSessionBody = {
+    player1Nickname: string;
+    player2Nickname: string;
+    winnerNickname: string;
+    player1Score: number;
+    player2Score: number;
+    startedAt: string;
+    endedAt: string;
+    duration: number;
+  };
+
+  app.post<{
+    Body: CreateOfflineGameSessionBody;
+    Reply: { id: number } | ApiErrorResponse;
+  }>(
+    '/api/game-sessions/offline',
+    { preHandler: [app.authenticate] },
+    async (request, reply) => {
+      const session = request.session;
+      if (!session) {
+        return reply.status(401).send({
+          error: 'Unauthorized',
+          message: 'Bu işlemi gerçekleştirmek için giriş yapmalısın.'
+        });
+      }
+
+      const { player1Nickname, player2Nickname, winnerNickname, player1Score, player2Score, startedAt, endedAt, duration } = request.body;
+
+      // Kullanıcının bu oyunda oynadığını kontrol et
+      const isPlayer1 = player1Nickname === session.nickname;
+      const isPlayer2 = player2Nickname === session.nickname;
+
+      if (!isPlayer1 && !isPlayer2) {
+        return reply.status(403).send({
+          error: 'Forbidden',
+          message: 'Bu oyunda oynamadığınız için kayıt yapamazsınız.'
+        });
+      }
+
+      // Winner ID'yi belirle
+      let winnerId: number | null = null;
+      if (winnerNickname === session.nickname) {
+        winnerId = session.sub;
+      } else {
+        // Rakip kullanıcıyı bul (eğer varsa)
+        const opponent = await request.server.db.get<{ id: number }>(
+          `SELECT id FROM users WHERE nickname = ?`,
+          winnerNickname
+        );
+        winnerId = opponent?.id || null;
+      }
+
+      try {
+        const result = await request.server.db.run(`
+          INSERT INTO game_sessions (
+            player1_id, player1_nickname,
+            player2_id, player2_nickname,
+            winner_id, winner_nickname,
+            player1_score, player2_score,
+            game_type, started_at, ended_at, duration_seconds
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'casual', ?, ?, ?)
+        `,
+          isPlayer1 ? session.sub : null,
+          player1Nickname,
+          isPlayer2 ? session.sub : null,
+          player2Nickname,
+          winnerId,
+          winnerNickname,
+          player1Score,
+          player2Score,
+          startedAt,
+          endedAt,
+          duration
+        );
+
+        return reply.status(201).send({
+          id: result.lastID ?? 0
+        });
+      } catch (error) {
+        request.log.error({ err: error }, 'Offline oyun oturumu kaydedilemedi');
+        return reply.status(500).send({
+          error: 'InternalServerError',
+          message: 'Oyun oturumu kaydedilirken hata oluştu.'
+        });
+      }
+    }
+  );
+
+  // Tek bir oyun oturumu detayı endpoint'i
+  app.get<{
+    Params: { id: string };
+    Reply: GameSessionDetailResponse | ApiErrorResponse;
+  }>(
+    '/api/game-sessions/:id',
+    { preHandler: [app.authenticate] },
+    async (request, reply) => {
+      const session = request.session;
+      if (!session) {
+        return reply.status(401).send({
+          error: 'Unauthorized',
+          message: 'Bu işlemi gerçekleştirmek için giriş yapmalısın.'
+        });
+      }
+
+      const sessionId = Number(request.params.id);
+      if (!Number.isInteger(sessionId)) {
+        return reply.status(400).send({
+          error: 'InvalidSession',
+          message: 'Geçersiz oyun oturumu kimliği.'
+        });
+      }
+
+      const gameSession = await request.server.db.get<{
+        id: number;
+        player1_id: number | null;
+        player1_nickname: string;
+        player2_id: number | null;
+        player2_nickname: string;
+        winner_id: number | null;
+        winner_nickname: string;
+        player1_score: number;
+        player2_score: number;
+        game_type: string;
+        tournament_id: number | null;
+        match_id: string | null;
+        started_at: string;
+        ended_at: string;
+        duration_seconds: number;
+      }>(`
+        SELECT 
+          id, player1_id, player1_nickname,
+          player2_id, player2_nickname,
+          winner_id, winner_nickname,
+          player1_score, player2_score,
+          game_type, tournament_id, match_id,
+          started_at, ended_at, duration_seconds
+        FROM game_sessions
+        WHERE id = ? AND (player1_id = ? OR player2_id = ?)
+      `, sessionId, session.sub, session.sub);
+
+      if (!gameSession) {
+        return reply.status(404).send({
+          error: 'SessionNotFound',
+          message: 'Oyun oturumu bulunamadı veya bu oturuma erişim yetkiniz yok.'
+        });
+      }
+
+      return {
+        id: gameSession.id,
+        player1: {
+          id: gameSession.player1_id,
+          nickname: gameSession.player1_nickname,
+          score: gameSession.player1_score
+        },
+        player2: {
+          id: gameSession.player2_id,
+          nickname: gameSession.player2_nickname,
+          score: gameSession.player2_score
+        },
+        winner: {
+          id: gameSession.winner_id,
+          nickname: gameSession.winner_nickname
+        },
+        gameType: gameSession.game_type,
+        tournamentId: gameSession.tournament_id,
+        matchId: gameSession.match_id,
+        startedAt: gameSession.started_at,
+        endedAt: gameSession.ended_at,
+        duration: gameSession.duration_seconds
+      };
+    }
+  );
+
+  // Friends API endpoints
+  // Kullanıcı arama endpoint'i (arkadaş eklemek için)
+  app.get<{
+    Querystring: { q?: string };
+    Reply: SearchUsersResponse | ApiErrorResponse;
+  }>(
+    '/api/users/search',
+    { preHandler: [app.authenticate] },
+    async (request, reply) => {
+      const session = request.session;
+      if (!session) {
+        return reply.status(401).send({
+          error: 'Unauthorized',
+          message: 'Bu işlemi gerçekleştirmek için giriş yapmalısın.'
+        });
+      }
+
+      const query = (request.query.q || '').trim();
+      if (query.length < 2) {
+        return reply.status(400).send({
+          error: 'InvalidQuery',
+          message: 'Arama sorgusu en az 2 karakter olmalı.'
+        });
+      }
+
+      // Kullanıcıları ara (kendisi hariç)
+      const usersRaw = await request.server.db.all<{
+        id: number;
+        nickname: string;
+        avatar_path: string | null;
+      }>(`
+        SELECT id, nickname, avatar_path
+        FROM users
+        WHERE id != ? AND nickname LIKE ?
+        LIMIT 20
+      `, session.sub, `%${query}%`);
+
+      const users = Array.isArray(usersRaw) ? usersRaw : [];
+
+      // Her kullanıcı için arkadaşlık durumunu kontrol et
+      const usersWithStatus = await Promise.all(
+        users.map(async (user: { id: number; nickname: string; avatar_path: string | null }) => {
+          const friendship = await request.server.db.get<{
+            status: string;
+            user_id: number;
+          }>(`
+            SELECT status, user_id
+            FROM friends
+            WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)
+            ORDER BY updated_at DESC
+            LIMIT 1
+          `, session.sub, user.id, user.id, session.sub);
+
+          let friendStatus: 'none' | 'pending' | 'accepted' | 'rejected' = 'none';
+          if (friendship) {
+            if (friendship.status === 'accepted') {
+              friendStatus = 'accepted';
+            } else if (friendship.status === 'pending') {
+              friendStatus = 'pending';
+            } else if (friendship.status === 'rejected') {
+              friendStatus = 'rejected';
+            }
+          }
+
+          return {
+            id: user.id,
+            nickname: user.nickname,
+            avatarUrl: user.avatar_path ? `/api/avatars/${user.avatar_path}` : null,
+            isFriend: friendStatus === 'accepted',
+            friendStatus
+          };
+        })
+      );
+
+      return { users: usersWithStatus };
+    }
+  );
+
+  // Arkadaş listesi ve istekler endpoint'i
+  app.get<{ Reply: FriendsListResponse | ApiErrorResponse }>(
+    '/api/friends',
+    { preHandler: [app.authenticate] },
+    async (request, reply) => {
+      const session = request.session;
+      if (!session) {
+        return reply.status(401).send({
+          error: 'Unauthorized',
+          message: 'Bu işlemi gerçekleştirmek için giriş yapmalısın.'
+        });
+      }
+
+      // Kabul edilmiş arkadaşlar
+      const acceptedFriendsRaw = await request.server.db.all<{
+        id: number;
+        user_id: number;
+        friend_id: number;
+        friend_nickname: string;
+        friend_avatar_path: string | null;
+        status: string;
+        created_at: string;
+        updated_at: string;
+      }>(`
+        SELECT 
+          f.id,
+          f.user_id,
+          f.friend_id,
+          u.nickname as friend_nickname,
+          u.avatar_path as friend_avatar_path,
+          f.status,
+          f.created_at,
+          f.updated_at
+        FROM friends f
+        JOIN users u ON (
+          CASE 
+            WHEN f.user_id = ? THEN f.friend_id
+            ELSE f.user_id
+          END = u.id
+        )
+        WHERE (f.user_id = ? OR f.friend_id = ?) AND f.status = 'accepted'
+        ORDER BY f.updated_at DESC
+      `, session.sub, session.sub, session.sub);
+
+      // Gönderilen istekler
+      const sentRequestsRaw = await request.server.db.all<{
+        id: number;
+        user_id: number;
+        friend_id: number;
+        friend_nickname: string;
+        friend_avatar_path: string | null;
+        status: string;
+        created_at: string;
+        updated_at: string;
+      }>(`
+        SELECT 
+          f.id,
+          f.user_id,
+          f.friend_id,
+          u.nickname as friend_nickname,
+          u.avatar_path as friend_avatar_path,
+          f.status,
+          f.created_at,
+          f.updated_at
+        FROM friends f
+        JOIN users u ON f.friend_id = u.id
+        WHERE f.user_id = ? AND f.status = 'pending'
+        ORDER BY f.created_at DESC
+      `, session.sub);
+
+      // Gelen istekler
+      const receivedRequestsRaw = await request.server.db.all<{
+        id: number;
+        user_id: number;
+        friend_id: number;
+        friend_nickname: string;
+        friend_avatar_path: string | null;
+        status: string;
+        created_at: string;
+        updated_at: string;
+      }>(`
+        SELECT 
+          f.id,
+          f.user_id,
+          f.friend_id,
+          u.nickname as friend_nickname,
+          u.avatar_path as friend_avatar_path,
+          f.status,
+          f.created_at,
+          f.updated_at
+        FROM friends f
+        JOIN users u ON f.user_id = u.id
+        WHERE f.friend_id = ? AND f.status = 'pending'
+        ORDER BY f.created_at DESC
+      `, session.sub);
+
+      const acceptedFriends = Array.isArray(acceptedFriendsRaw) ? acceptedFriendsRaw : [];
+      const sentRequests = Array.isArray(sentRequestsRaw) ? sentRequestsRaw : [];
+      const receivedRequests = Array.isArray(receivedRequestsRaw) ? receivedRequestsRaw : [];
+
+      type FriendRow = {
+        id: number;
+        user_id: number;
+        friend_id: number;
+        friend_nickname: string;
+        friend_avatar_path: string | null;
+        status: string;
+        created_at: string;
+        updated_at: string;
+      };
+
+      const formatFriend = (row: FriendRow, type: 'accepted' | 'sent' | 'received'): FriendResponse => {
+        let friendId: number;
+        
+        if (type === 'accepted') {
+          // Kabul edilmiş arkadaşlar için: CASE WHEN ile JOIN yapıldığı için
+          // JOIN'de CASE WHEN kullanıldığı için u.id her zaman arkadaşın ID'si
+          // Ama row.user_id ve row.friend_id'den hangisinin arkadaş olduğunu bulmalıyız
+          // Eğer user_id = session.sub ise friend_id arkadaşın ID'si
+          // Eğer friend_id = session.sub ise user_id arkadaşın ID'si
+          friendId = row.user_id === session.sub ? row.friend_id : row.user_id;
+        } else if (type === 'sent') {
+          // Gönderilen istekler için: user_id = session.sub, friend_id = arkadaşın ID'si
+          friendId = row.friend_id;
+        } else {
+          // Gelen istekler için: friend_id = session.sub, user_id = arkadaşın ID'si
+          friendId = row.user_id;
+        }
+        
+        return {
+          id: row.id,
+          userId: row.user_id,
+          friendId: friendId,
+          friendNickname: row.friend_nickname,
+          friendAvatarUrl: row.friend_avatar_path ? `/api/avatars/${row.friend_avatar_path}` : null,
+          status: row.status as 'pending' | 'accepted' | 'rejected',
+          createdAt: row.created_at,
+          updatedAt: row.updated_at
+        };
+      };
+
+      return {
+        friends: acceptedFriends.map(row => formatFriend(row, 'accepted')),
+        requests: {
+          sent: sentRequests.map(row => formatFriend(row, 'sent')),
+          received: receivedRequests.map(row => formatFriend(row, 'received'))
+        }
+      };
+    }
+  );
+
+  // Arkadaş ekleme isteği gönderme endpoint'i
+  app.post<{
+    Body: AddFriendBody;
+    Reply: FriendResponse | ApiErrorResponse;
+  }>(
+    '/api/friends/add',
+    { preHandler: [app.authenticate] },
+    async (request, reply) => {
+      const session = request.session;
+      if (!session) {
+        return reply.status(401).send({
+          error: 'Unauthorized',
+          message: 'Bu işlemi gerçekleştirmek için giriş yapmalısın.'
+        });
+      }
+
+      const { friendId } = request.body;
+
+      if (!Number.isInteger(friendId) || friendId <= 0) {
+        return reply.status(400).send({
+          error: 'InvalidFriendId',
+          message: 'Geçersiz kullanıcı kimliği.'
+        });
+      }
+
+      if (friendId === session.sub) {
+        return reply.status(400).send({
+          error: 'InvalidFriendId',
+          message: 'Kendinizi arkadaş olarak ekleyemezsiniz.'
+        });
+      }
+
+      // Kullanıcının varlığını kontrol et
+      const friend = await request.server.db.get<{ id: number; nickname: string }>(
+        `SELECT id, nickname FROM users WHERE id = ?`,
+        friendId
+      );
+
+      if (!friend) {
+        return reply.status(404).send({
+          error: 'UserNotFound',
+          message: 'Kullanıcı bulunamadı.'
+        });
+      }
+
+      // Zaten bir arkadaşlık isteği var mı kontrol et
+      const existing = await request.server.db.get<{ id: number; status: string }>(
+        `SELECT id, status FROM friends 
+         WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)`,
+        session.sub, friendId, friendId, session.sub
+      );
+
+      if (existing) {
+        if (existing.status === 'accepted') {
+          return reply.status(409).send({
+            error: 'AlreadyFriends',
+            message: 'Bu kullanıcı zaten arkadaşınız.'
+          });
+        } else if (existing.status === 'pending') {
+          return reply.status(409).send({
+            error: 'RequestExists',
+            message: 'Bu kullanıcıya zaten bir arkadaşlık isteği gönderilmiş.'
+          });
+        }
+      }
+
+      // Yeni arkadaşlık isteği oluştur
+      const result = await request.server.db.run(`
+        INSERT INTO friends (user_id, friend_id, status, updated_at)
+        VALUES (?, ?, 'pending', CURRENT_TIMESTAMP)
+      `, session.sub, friendId);
+
+      const friendAvatar = await request.server.db.get<{ avatar_path: string | null }>(
+        `SELECT avatar_path FROM users WHERE id = ?`,
+        friendId
+      );
+
+      return reply.status(201).send({
+        id: result.lastID ?? 0,
+        userId: session.sub,
+        friendId: friendId,
+        friendNickname: friend.nickname,
+        friendAvatarUrl: friendAvatar?.avatar_path ? `/api/avatars/${friendAvatar.avatar_path}` : null,
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+    }
+  );
+
+  // Arkadaşlık isteğini kabul etme endpoint'i
+  app.post<{
+    Params: { id: string };
+    Reply: FriendResponse | ApiErrorResponse;
+  }>(
+    '/api/friends/accept/:id',
+    { preHandler: [app.authenticate] },
+    async (request, reply) => {
+      const session = request.session;
+      if (!session) {
+        return reply.status(401).send({
+          error: 'Unauthorized',
+          message: 'Bu işlemi gerçekleştirmek için giriş yapmalısın.'
+        });
+      }
+
+      const requestId = Number(request.params.id);
+      if (!Number.isInteger(requestId)) {
+        return reply.status(400).send({
+          error: 'InvalidRequestId',
+          message: 'Geçersiz istek kimliği.'
+        });
+      }
+
+      // İsteği kontrol et (sadece gelen istekleri kabul edebilir)
+      const friendship = await request.server.db.get<{
+        id: number;
+        user_id: number;
+        friend_id: number;
+        status: string;
+      }>(
+        `SELECT id, user_id, friend_id, status FROM friends WHERE id = ? AND friend_id = ?`,
+        requestId, session.sub
+      );
+
+      if (!friendship) {
+        return reply.status(404).send({
+          error: 'RequestNotFound',
+          message: 'Arkadaşlık isteği bulunamadı veya bu isteği kabul etme yetkiniz yok.'
+        });
+      }
+
+      if (friendship.status !== 'pending') {
+        return reply.status(400).send({
+          error: 'InvalidStatus',
+          message: 'Bu istek zaten işlenmiş.'
+        });
+      }
+
+      // İsteği kabul et
+      await request.server.db.run(`
+        UPDATE friends 
+        SET status = 'accepted', updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `, requestId);
+
+      // Güncellenmiş bilgileri getir
+      const updated = await request.server.db.get<{
+        id: number;
+        user_id: number;
+        friend_id: number;
+        friend_nickname: string;
+        friend_avatar_path: string | null;
+        status: string;
+        created_at: string;
+        updated_at: string;
+      }>(`
+        SELECT 
+          f.id,
+          f.user_id,
+          f.friend_id,
+          u.nickname as friend_nickname,
+          u.avatar_path as friend_avatar_path,
+          f.status,
+          f.created_at,
+          f.updated_at
+        FROM friends f
+        JOIN users u ON f.user_id = u.id
+        WHERE f.id = ?
+      `, requestId);
+
+      if (!updated) {
+        return reply.status(500).send({
+          error: 'InternalServerError',
+          message: 'İstek kabul edilirken bir hata oluştu.'
+        });
+      }
+
+      return reply.status(200).send({
+        id: updated.id,
+        userId: updated.user_id,
+        friendId: updated.friend_id,
+        friendNickname: updated.friend_nickname,
+        friendAvatarUrl: updated.friend_avatar_path ? `/api/avatars/${updated.friend_avatar_path}` : null,
+        status: 'accepted',
+        createdAt: updated.created_at,
+        updatedAt: updated.updated_at
+      });
+    }
+  );
+
+  // Arkadaşlık isteğini reddetme endpoint'i
+  app.post<{
+    Params: { id: string };
+    Reply: { success: boolean } | ApiErrorResponse;
+  }>(
+    '/api/friends/reject/:id',
+    { preHandler: [app.authenticate] },
+    async (request, reply) => {
+      const session = request.session;
+      if (!session) {
+        return reply.status(401).send({
+          error: 'Unauthorized',
+          message: 'Bu işlemi gerçekleştirmek için giriş yapmalısın.'
+        });
+      }
+
+      const requestId = Number(request.params.id);
+      if (!Number.isInteger(requestId)) {
+        return reply.status(400).send({
+          error: 'InvalidRequestId',
+          message: 'Geçersiz istek kimliği.'
+        });
+      }
+
+      // İsteği kontrol et (sadece gelen istekleri reddedebilir)
+      const friendship = await request.server.db.get<{
+        id: number;
+        status: string;
+      }>(
+        `SELECT id, status FROM friends WHERE id = ? AND friend_id = ?`,
+        requestId, session.sub
+      );
+
+      if (!friendship) {
+        return reply.status(404).send({
+          error: 'RequestNotFound',
+          message: 'Arkadaşlık isteği bulunamadı veya bu isteği reddetme yetkiniz yok.'
+        });
+      }
+
+      if (friendship.status !== 'pending') {
+        return reply.status(400).send({
+          error: 'InvalidStatus',
+          message: 'Bu istek zaten işlenmiş.'
+        });
+      }
+
+      // İsteği reddet (sil)
+      await request.server.db.run(`DELETE FROM friends WHERE id = ?`, requestId);
+
+      return reply.status(200).send({ success: true });
+    }
+  );
+
+  // Arkadaşlığı silme endpoint'i
+  app.delete<{
+    Params: { id: string };
+    Reply: { success: boolean } | ApiErrorResponse;
+  }>(
+    '/api/friends/:id',
+    { preHandler: [app.authenticate] },
+    async (request, reply) => {
+      const session = request.session;
+      if (!session) {
+        return reply.status(401).send({
+          error: 'Unauthorized',
+          message: 'Bu işlemi gerçekleştirmek için giriş yapmalısın.'
+        });
+      }
+
+      const friendId = Number(request.params.id);
+      if (!Number.isInteger(friendId)) {
+        return reply.status(400).send({
+          error: 'InvalidFriendId',
+          message: 'Geçersiz kullanıcı kimliği.'
+        });
+      }
+
+      // Arkadaşlığı kontrol et
+      const friendship = await request.server.db.get<{
+        id: number;
+      }>(
+        `SELECT id FROM friends 
+         WHERE ((user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)) 
+         AND status = 'accepted'`,
+        session.sub, friendId, friendId, session.sub
+      );
+
+      if (!friendship) {
+        return reply.status(404).send({
+          error: 'FriendshipNotFound',
+          message: 'Arkadaşlık bulunamadı.'
+        });
+      }
+
+      // Arkadaşlığı sil
+      await request.server.db.run(`
+        DELETE FROM friends 
+        WHERE ((user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?))
+      `, session.sub, friendId, friendId, session.sub);
+
+      return reply.status(200).send({ success: true });
+    }
+  );
+
+  // Kullanıcı profil endpoint'i
+  app.get<{
+    Params: { id: string };
+    Reply: {
+      id: number;
+      nickname: string;
+      avatarUrl: string | null;
+      createdAt: string;
+      stats: {
+        totalGames: number;
+        wins: number;
+        losses: number;
+      };
+      isFriend: boolean;
+      friendStatus: 'none' | 'pending' | 'accepted' | 'rejected';
+    } | ApiErrorResponse;
+  }>(
+    '/api/users/:id/profile',
+    { preHandler: [app.authenticate] },
+    async (request, reply) => {
+      const session = request.session;
+      if (!session) {
+        return reply.status(401).send({
+          error: 'Unauthorized',
+          message: 'Bu işlemi gerçekleştirmek için giriş yapmalısın.'
+        });
+      }
+
+      const userId = Number(request.params.id);
+      if (!Number.isInteger(userId) || userId <= 0) {
+        return reply.status(400).send({
+          error: 'InvalidUserId',
+          message: 'Geçersiz kullanıcı kimliği.'
+        });
+      }
+
+      // Kullanıcı bilgilerini getir
+      const user = await request.server.db.get<{
+        id: number;
+        nickname: string;
+        avatar_path: string | null;
+        created_at: string;
+      }>(
+        `SELECT id, nickname, avatar_path, created_at FROM users WHERE id = ?`,
+        userId
+      );
+
+      if (!user) {
+        return reply.status(404).send({
+          error: 'UserNotFound',
+          message: 'Kullanıcı bulunamadı.'
+        });
+      }
+
+      // İstatistikleri getir
+      const totalGames = await request.server.db.get<{ count: number }>(`
+        SELECT COUNT(*) as count
+        FROM game_sessions
+        WHERE player1_id = ? OR player2_id = ?
+      `, userId, userId);
+
+      const wins = await request.server.db.get<{ count: number }>(`
+        SELECT COUNT(*) as count
+        FROM game_sessions
+        WHERE (player1_id = ? OR player2_id = ?) AND winner_id = ?
+      `, userId, userId, userId);
+
+      const losses = await request.server.db.get<{ count: number }>(`
+        SELECT COUNT(*) as count
+        FROM game_sessions
+        WHERE (player1_id = ? OR player2_id = ?) AND (winner_id IS NULL OR winner_id != ?)
+      `, userId, userId, userId);
+
+      // Arkadaşlık durumunu kontrol et
+      const friendship = await request.server.db.get<{
+        status: string;
+        user_id: number;
+      }>(`
+        SELECT status, user_id
+        FROM friends
+        WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)
+        ORDER BY updated_at DESC
+        LIMIT 1
+      `, session.sub, userId, userId, session.sub);
+
+      let friendStatus: 'none' | 'pending' | 'accepted' | 'rejected' = 'none';
+      let isFriend = false;
+      if (friendship) {
+        if (friendship.status === 'accepted') {
+          friendStatus = 'accepted';
+          isFriend = true;
+        } else if (friendship.status === 'pending') {
+          friendStatus = 'pending';
+        } else if (friendship.status === 'rejected') {
+          friendStatus = 'rejected';
+        }
+      }
+
+      return {
+        id: user.id,
+        nickname: user.nickname,
+        avatarUrl: user.avatar_path ? `/api/avatars/${user.avatar_path}` : null,
+        createdAt: user.created_at,
+        stats: {
+          totalGames: totalGames?.count || 0,
+          wins: wins?.count || 0,
+          losses: losses?.count || 0
+        },
+        isFriend,
+        friendStatus
+      };
+    }
+  );
+
+  // registerGameWebSocket db ayarlandıktan sonra çağrılacak (start fonksiyonunda)
   return app;
 };
 const start = async () => {
@@ -1928,6 +3270,9 @@ const start = async () => {
   const db = await createDatabaseConnection();
 
   server.decorate('db', db);
+  
+  // db ayarlandıktan sonra WebSocket'i kaydet
+  registerGameWebSocket(server);
   server.addHook('onClose', async () => {
     await db.close();
   });

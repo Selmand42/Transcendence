@@ -321,7 +321,7 @@ class OnlineGameClient {
     this.state = null;
     this.stopAnimation();
 
-    const url = `${wsUrl()}?nickname=${encodeURIComponent(this.user.nickname)}`;
+    const url = `${wsUrl()}?nickname=${encodeURIComponent(this.user.nickname)}&userId=${this.user.id}`;
     this.ws = new WebSocket(url);
     this.ws.addEventListener('message', (ev) => this.handleMessage(ev));
     this.ws.addEventListener('open', () => {

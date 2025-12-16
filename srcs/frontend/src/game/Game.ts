@@ -23,6 +23,9 @@ export class Game {
     private animationFrameId: number | null = null;
     private onTournamentMatchEnd?: (winner: 'A' | 'B', scoreA: number, scoreB: number) => void;
     private tournamentId?: string;
+    private startTime?: Date;
+    private player1Nickname?: string;
+    private player2Nickname?: string;
 
 
 
@@ -34,13 +37,18 @@ export class Game {
         scoreBEl: HTMLElement | null = null,
         statusEl: HTMLElement | null = null,
         onTournamentMatchEnd?: (winner: 'A' | 'B', scoreA: number, scoreB: number) => void,
-        tournamentId?: string
+        tournamentId?: string,
+        player1Nickname?: string,
+        player2Nickname?: string
     ) {
         this.scoreAEl = scoreAEl;
         this.scoreBEl = scoreBEl;
         this.statusEl = statusEl;
         this.onTournamentMatchEnd = onTournamentMatchEnd;
         this.tournamentId = tournamentId;
+        this.player1Nickname = player1Nickname || 'Player A';
+        this.player2Nickname = player2Nickname || 'AI';
+        this.startTime = new Date();
         this.ctx = ctx;
         this.height = canvas.height;
         this.width = canvas.width;
@@ -247,6 +255,33 @@ export class Game {
         // Turnuva maçı sonucunu gönder
         if (this.onTournamentMatchEnd) {
             this.onTournamentMatchEnd(winnerKey, scoreA, scoreB);
+        } else {
+            // Turnuva maçı değilse, offline oyun olarak kaydet
+            const endTime = new Date();
+            const duration = this.startTime 
+                ? Math.floor((endTime.getTime() - this.startTime.getTime()) / 1000)
+                : 0;
+            
+            const winnerNickname = winner === 0 ? this.player1Nickname! : this.player2Nickname!;
+            
+            // Backend'e kaydet
+            void fetch('/api/game-sessions/offline', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({
+                    player1Nickname: this.player1Nickname!,
+                    player2Nickname: this.player2Nickname!,
+                    winnerNickname,
+                    player1Score: scoreA,
+                    player2Score: scoreB,
+                    startedAt: this.startTime?.toISOString() || endTime.toISOString(),
+                    endedAt: endTime.toISOString(),
+                    duration
+                })
+            }).catch(error => {
+                console.warn('Offline oyun kaydedilemedi:', error);
+            });
         }
 
         if (this.statusEl) {

@@ -8,7 +8,9 @@ export const initializePongGame = (
     scoreBEl: HTMLElement,
     statusEl: HTMLElement | null,
     onTournamentMatchEnd?: (winner: 'A' | 'B', scoreA: number, scoreB: number) => void,
-    tournamentId?: string
+    tournamentId?: string,
+    player1Nickname?: string,
+    player2Nickname?: string
 ) => {
     const pressedKeys = new Set<string>();
     const ctx = canvas.getContext('2d');
@@ -39,7 +41,7 @@ export const initializePongGame = (
         scoreBEl.textContent = "B: 0";
     }
 
-    const game = new Game(ctx, canvas, pressedKeys, scoreAEl, scoreBEl, statusEl, onTournamentMatchEnd, tournamentId);
+    const game = new Game(ctx, canvas, pressedKeys, scoreAEl, scoreBEl, statusEl, onTournamentMatchEnd, tournamentId, player1Nickname, player2Nickname);
 
     // Keyboard event listeners
     const handleKeyDown = (event: KeyboardEvent) => {

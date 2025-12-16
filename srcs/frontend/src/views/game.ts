@@ -162,6 +162,7 @@ export const renderGameView = (container: HTMLElement) => {
               status: 'pending' | 'completed';
             }>;
           }>;
+          completed: boolean;
         } | null;
       }>;
 
@@ -318,7 +319,9 @@ export const renderGameView = (container: HTMLElement) => {
         scoreBEl,
         gameStatusEl,
         tournamentMatchData ? handleTournamentMatchEndOffline : undefined,
-        tournamentMatchData ? tournamentMatchData.tournamentId : undefined
+        tournamentMatchData ? tournamentMatchData.tournamentId : undefined,
+        user.nickname,
+        'AI'
       );
     } else {
       gameStatusEl.classList.add('hidden');

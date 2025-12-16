@@ -5,6 +5,7 @@ export type StoredUser = {
   email: string;
   nickname: string;
   provider: 'local' | 'google';
+  avatarUrl?: string | null;
 };
 
 // Kullanıcı bilgisini kalıcı tutuyoruz; token httpOnly cookie ile saklanıyor.
