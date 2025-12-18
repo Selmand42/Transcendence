@@ -6,14 +6,14 @@ WORKDIR /app
 # Ayrıca sqlite CLI'sını yükleyerek konteyner içinden veritabanını inceleyebilmeyi sağlıyoruz.
 RUN apk add --no-cache python3 make g++ sqlite
 # Bağımlılık önbelleğini kullanabilmek için paket tanımını önce kopyalıyoruz.
-COPY backend/package.json ./
-# Geliştirme bağımlılıklarını da içerecek şekilde npm install çalıştırıyoruz.
-RUN npm install
+COPY srcs/backend/package*.json ./
+# package-lock.json'a göre tam olarak belirtilen bağımlılıkları yüklüyoruz (npm ci production için önerilir).
+RUN npm ci
 # Geri kalan tüm backend kaynaklarını kopyalayıp derleme dosyalarını oluşturmaya hazır hale getiriyoruz.
-COPY backend/. .
+COPY srcs/backend/. .
 # Tip kontrolü ve build çıktısı oluşturuyoruz; prod ortamında dist klasörü çalışacak.
 RUN npm run build
 # Servisin dinlediği portu dış dünyaya ilan ediyoruz.
 EXPOSE 3000
-# Varsayılan olarak geliştirme modunda (hot reload) çalıştırıyoruz; gerekirse prod start'a alınabilir.
-CMD ["npm","run","dev"]
+# Production modunda derlenmiş kodu çalıştırıyoruz.
+CMD ["npm","start"]
