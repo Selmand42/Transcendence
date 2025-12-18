@@ -1,4 +1,5 @@
 import { loadSession } from '../utils/storage';
+import { apiFetch } from '../utils/api';
 
 type TournamentDTO = {
   id: number;
@@ -360,7 +361,7 @@ export const renderTournamentView = (container: HTMLElement) => {
   const fetchTournaments = async () => {
     updateStatus(listStatus, 'loading', 'Turnuvalar yükleniyor...');
     try {
-      const response = await fetch('/api/tournaments', { credentials: 'include' });
+      const response = await apiFetch('/api/tournaments');
       if (!response.ok) {
         if (response.status === 401) {
           location.hash = '/auth';
@@ -494,9 +495,8 @@ export const renderTournamentView = (container: HTMLElement) => {
   const joinTournament = async (id: number) => {
     updateStatus(listStatus, 'loading', 'Katılım gönderiliyor...');
     try {
-      const response = await fetch(`/api/tournaments/${id}/join`, {
-        method: 'POST',
-        credentials: 'include'
+      const response = await apiFetch(`/api/tournaments/${id}/join`, {
+        method: 'POST'
       });
       if (!response.ok) {
         const payload = (await response.json().catch(() => null)) as { message?: string } | null;
@@ -514,9 +514,8 @@ export const renderTournamentView = (container: HTMLElement) => {
   const startTournament = async (id: number) => {
     updateStatus(listStatus, 'loading', 'Turnuva başlatılıyor...');
     try {
-      const response = await fetch(`/api/tournaments/${id}/start`, {
-        method: 'POST',
-        credentials: 'include'
+      const response = await apiFetch(`/api/tournaments/${id}/start`, {
+        method: 'POST'
       });
       if (!response.ok) {
         const payload = (await response.json().catch(() => null)) as { message?: string } | null;
@@ -534,9 +533,8 @@ export const renderTournamentView = (container: HTMLElement) => {
   const deleteTournament = async (id: number) => {
     updateStatus(listStatus, 'loading', 'Turnuva siliniyor...');
     try {
-      const response = await fetch(`/api/tournaments/${id}`, {
-        method: 'DELETE',
-        credentials: 'include'
+      const response = await apiFetch(`/api/tournaments/${id}`, {
+        method: 'DELETE'
       });
       if (!response.ok) {
         const payload = (await response.json().catch(() => null)) as { message?: string } | null;
@@ -561,7 +559,7 @@ export const renderTournamentView = (container: HTMLElement) => {
     updateStatus(createStatus, 'loading', 'Turnuva oluşturuluyor...');
     const formData = new FormData(createForm);
     try {
-      const response = await fetch('/api/tournaments', {
+      const response = await apiFetch('/api/tournaments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

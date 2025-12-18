@@ -2,6 +2,7 @@
 import { initializeOnlineGame } from '../game/online';
 import { initializePongGame } from '../game/script';
 import { loadSession } from '../utils/storage';
+import { apiFetch } from '../utils/api';
 
 export const renderGameView = (container: HTMLElement) => {
   const user = loadSession();
@@ -48,9 +49,10 @@ export const renderGameView = (container: HTMLElement) => {
     <section class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div class="relative flex flex-col items-center gap-6">
         <!-- Mode Selection -->
-        <div class="flex gap-3 justify-center items-center">
-          <button class="px-6 py-3 rounded-xl font-bold text-sm bg-slate-200/80 text-slate-900 border-2 border-slate-300 shadow-md hover:bg-slate-100 hover:shadow-lg transition-all duration-200" type="button" data-mode="offline">Offline Oyna</button>
-          <button class="px-6 py-3 rounded-xl font-bold text-sm bg-sky-500/90 text-white border-2 border-sky-300 shadow-md hover:bg-sky-600 hover:shadow-lg transition-all duration-200" type="button" data-mode="online">Online Oyna</button>
+        <div class="relative inline-flex items-center rounded-2xl bg-slate-800/90 p-1.5 shadow-lg border border-slate-700/50" data-mode-toggle>
+          <div class="absolute inset-y-1.5 left-1.5 w-[calc(50%-0.375rem)] rounded-xl bg-gradient-to-r from-sky-500 to-sky-600 shadow-md transition-transform duration-300 ease-in-out" data-mode-indicator></div>
+          <button class="relative z-10 px-8 py-3 rounded-xl font-bold text-sm transition-colors duration-300 text-white" type="button" data-mode="offline">Offline</button>
+          <button class="relative z-10 px-8 py-3 rounded-xl font-bold text-sm transition-colors duration-300 text-slate-400" type="button" data-mode="online">Online</button>
         </div>
 
         <!-- Scoreboard Section -->
@@ -133,20 +135,35 @@ export const renderGameView = (container: HTMLElement) => {
   const offlineBtn = root.querySelector<HTMLButtonElement>('[data-mode="offline"]');
   const onlineBtn = root.querySelector<HTMLButtonElement>('[data-mode="online"]');
   const lobbySection = root.querySelector<HTMLElement>('[data-section="lobby"]');
+  const modeToggle = root.querySelector<HTMLElement>('[data-mode-toggle]');
+  const modeIndicator = root.querySelector<HTMLElement>('[data-mode-indicator]');
 
-  if (!createBtn || !joinBtn || !roomInput || !statusEl || !gameStatusEl || !offlineBtn || !onlineBtn || !lobbySection) {
+  if (!createBtn || !joinBtn || !roomInput || !statusEl || !gameStatusEl || !offlineBtn || !onlineBtn || !lobbySection || !modeToggle || !modeIndicator) {
     throw new Error('Oyun lobisi oluşturulamadı.');
   }
 
   let cleanup: () => void = () => {};
   let tournamentMatchData: { tournamentId: string; matchId: string; opponentIsAI: boolean; playerPosition: 'A' | 'B'; tournamentName?: string; roundNumber?: number } | null = null;
 
+  // Toggle mode UI helper
+  const updateModeToggle = (mode: 'offline' | 'online') => {
+    if (mode === 'offline') {
+      modeIndicator.style.transform = 'translateX(0%)';
+      offlineBtn.className = 'relative z-10 px-8 py-3 rounded-xl font-bold text-sm transition-colors duration-300 text-white';
+      onlineBtn.className = 'relative z-10 px-8 py-3 rounded-xl font-bold text-sm transition-colors duration-300 text-slate-400';
+    } else {
+      modeIndicator.style.transform = 'translateX(100%)';
+      offlineBtn.className = 'relative z-10 px-8 py-3 rounded-xl font-bold text-sm transition-colors duration-300 text-slate-400';
+      onlineBtn.className = 'relative z-10 px-8 py-3 rounded-xl font-bold text-sm transition-colors duration-300 text-white';
+    }
+  };
+
   // Turnuva maçı bilgilerini al ve rakibin AI olup olmadığını kontrol et
   const loadTournamentMatchInfo = async () => {
     if (!tournamentId || !matchId) return;
 
     try {
-      const response = await fetch(`/api/tournaments`, { credentials: 'include' });
+      const response = await apiFetch(`/api/tournaments`);
       if (!response.ok) return;
 
       const tournaments = (await response.json()) as Array<{
@@ -217,6 +234,7 @@ export const renderGameView = (container: HTMLElement) => {
 
   const setMode = (mode: 'offline' | 'online') => {
     cleanup();
+    updateModeToggle(mode);
     if (mode === 'offline') {
       // Turnuva maçı varsa turnuva ismi ve round bilgisi yaz, yoksa "Offline mod (AI)" yaz
       if (tournamentMatchData) {
@@ -239,8 +257,6 @@ export const renderGameView = (container: HTMLElement) => {
       createBtn.className = 'w-full sm:w-auto px-6 py-3 rounded-xl font-bold text-sm bg-slate-600/50 text-slate-400 border-2 border-slate-600/50 cursor-not-allowed opacity-50';
       joinBtn.className = 'px-6 py-3 rounded-xl font-bold text-sm bg-slate-600/50 text-slate-400 border-2 border-slate-600/50 cursor-not-allowed opacity-50';
       roomInput.className = 'flex-1 w-full sm:w-auto px-4 py-3 rounded-xl border-2 border-slate-600/50 bg-slate-700/30 text-slate-500 placeholder-slate-500 cursor-not-allowed opacity-50';
-      offlineBtn.className = 'px-6 py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-slate-500 to-slate-600 text-white border-2 border-slate-400 shadow-lg transition-all duration-200';
-      onlineBtn.className = 'px-6 py-3 rounded-xl font-bold text-sm bg-sky-500/90 text-white border-2 border-sky-300 shadow-md hover:bg-sky-600 hover:shadow-lg transition-all duration-200';
       lobbySection.style.display = 'none';
 
       // Turnuva maçı için callback ekle
@@ -272,10 +288,9 @@ export const renderGameView = (container: HTMLElement) => {
         }
 
         try {
-          const response = await fetch(`/api/tournaments/${tournamentMatchData.tournamentId}/matches/${encodeURIComponent(tournamentMatchData.matchId)}/result`, {
+          const response = await apiFetch(`/api/tournaments/${tournamentMatchData.tournamentId}/matches/${encodeURIComponent(tournamentMatchData.matchId)}/result`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
             body: JSON.stringify({ winner: tournamentWinner, scoreA: tournamentScoreA, scoreB: tournamentScoreB })
           });
 
@@ -333,17 +348,14 @@ export const renderGameView = (container: HTMLElement) => {
       createBtn.className = 'w-full sm:w-auto px-6 py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-sky-500 to-sky-600 text-white border-2 border-sky-400 shadow-lg hover:from-sky-600 hover:to-sky-700 hover:shadow-xl hover:scale-105 transition-all duration-200';
       joinBtn.className = 'px-6 py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-emerald-500 to-emerald-600 text-white border-2 border-emerald-400 shadow-lg hover:from-emerald-600 hover:to-emerald-700 hover:shadow-xl hover:scale-105 transition-all duration-200';
       roomInput.className = 'flex-1 w-full sm:w-auto px-4 py-3 rounded-xl border-2 border-slate-600 bg-slate-700/50 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 transition-all duration-200 uppercase';
-      offlineBtn.className = 'px-6 py-3 rounded-xl font-bold text-sm bg-slate-200/80 text-slate-900 border-2 border-slate-300 shadow-md hover:bg-slate-100 hover:shadow-lg transition-all duration-200';
-      onlineBtn.className = 'px-6 py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-sky-500 to-sky-600 text-white border-2 border-sky-400 shadow-lg transition-all duration-200';
       lobbySection.style.display = 'block';
       const handleTournamentMatchEnd = async (winner: 'A' | 'B', scoreA: number, scoreB: number) => {
         if (!tournamentMatchData) return;
 
         try {
-          const response = await fetch(`/api/tournaments/${tournamentMatchData.tournamentId}/matches/${encodeURIComponent(tournamentMatchData.matchId)}/result`, {
+          const response = await apiFetch(`/api/tournaments/${tournamentMatchData.tournamentId}/matches/${encodeURIComponent(tournamentMatchData.matchId)}/result`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
             body: JSON.stringify({ winner, scoreA, scoreB })
           });
 

@@ -1,5 +1,6 @@
 import { loadSession, clearSession } from '../utils/storage';
 import { escapeHtml } from '../utils/sanitize';
+import { apiFetch } from '../utils/api';
 import { Chart, registerables } from 'chart.js';
 
 Chart.register(...registerables);
@@ -90,8 +91,8 @@ export const renderGameSessionView = (container: HTMLElement) => {
 
   const loadSessionDetail = async () => {
     try {
-      const response = await fetch(`/api/game-sessions/${sessionId}`, { credentials: 'include' });
-      
+      const response = await apiFetch(`/api/game-sessions/${sessionId}`);
+
       if (!response.ok) {
         if (response.status === 401) {
           clearSession();

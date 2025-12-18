@@ -1,4 +1,5 @@
 import type { StoredUser } from '../utils/storage';
+import { getWsUrl } from '../utils/api';
 
 const RATIO = 1.79672131148;
 
@@ -38,8 +39,7 @@ type Controls = {
 };
 
 const wsUrl = () => {
-  const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-  return `${protocol}://${location.host}/ws/game`;
+  return getWsUrl();
 };
 
 const resizeCanvas = (canvas: HTMLCanvasElement) => {
@@ -56,6 +56,7 @@ class OnlineGameClient {
   private roomCode: string | null = null;
   private handleResize: () => void;
   private gameEnded: boolean = false;
+  private controlsHiddenForActiveGame: boolean = false;
   private tournamentMatchData: { tournamentId: string; matchId: string; opponentIsAI?: boolean; tournamentName?: string; roundNumber?: number } | null = null;
   private onTournamentMatchEnd?: (winner: 'A' | 'B', scoreA: number, scoreB: number) => void;
 
@@ -235,6 +236,13 @@ class OnlineGameClient {
       this.state = parsed.state;
       this.updateScores();
       this.startAnimation();
+      // Hide lobby controls when game starts (ball becomes active)
+      if (this.state.active && !this.controlsHiddenForActiveGame) {
+        this.controlsHiddenForActiveGame = true;
+        this.controls.createButton.style.display = 'none';
+        this.controls.joinButton.style.display = 'none';
+        this.controls.roomInput.style.display = 'none';
+      }
     } else if (parsed.type === 'error') {
       this.setStatus(parsed.message, 'error');
     } else if (parsed.type === 'opponent_left') {

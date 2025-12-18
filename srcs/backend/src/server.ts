@@ -1,4 +1,5 @@
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
+import cors from '@fastify/cors';
 import bcrypt from 'bcryptjs';
 import cookie from 'cookie';
 import jwt from 'jsonwebtoken';
@@ -724,11 +725,55 @@ function registerAuthenticationHelpers(app: FastifyInstance) {
 }
 
 export const buildServer = () => {
-  const app = Fastify({ 
+  const app = Fastify({
     logger: true,
     bodyLimit: 5 * 1024 * 1024 // 5MB body limit (avatar upload için)
   });
   const METRICS_START = Symbol('metrics-start');
+
+  // CORS configuration for cross-origin requests (Netlify frontend)
+  void app.register(cors, {
+    origin: (origin, callback) => {
+      // Allow requests with no origin (mobile apps, Postman, etc.)
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+
+      // Normalize URLs for comparison (remove trailing slashes)
+      const normalizeUrl = (url: string) => url.replace(/\/$/, '');
+
+      // Allow localhost for development
+      if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+        callback(null, true);
+        return;
+      }
+
+      // Allow configured frontend URL (Netlify) - check exact match or if origin starts with it
+      const normalizedOrigin = normalizeUrl(origin);
+      const normalizedFrontendUrl = normalizeUrl(env.frontendUrl);
+
+      if (normalizedOrigin === normalizedFrontendUrl || normalizedOrigin.startsWith(normalizedFrontendUrl)) {
+        callback(null, true);
+        return;
+      }
+
+      // Also allow common Netlify patterns (for debugging, can be removed in production)
+      if (origin.includes('.netlify.app')) {
+        app.log.warn({ origin, frontendUrl: env.frontendUrl }, 'Allowing Netlify origin (consider configuring FRONTEND_URL)');
+        callback(null, true);
+        return;
+      }
+
+      // Log rejected origins for debugging
+      app.log.warn({ origin, frontendUrl: env.frontendUrl }, 'CORS origin rejected');
+      callback(new Error('Not allowed by CORS'), false);
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'X-Requested-With'],
+    exposedHeaders: ['Set-Cookie'],
+  });
 
   app.addHook('onRequest', (request, _reply, done) => {
     (request as FastifyRequest & { [METRICS_START]?: bigint })[METRICS_START] = process.hrtime.bigint();
@@ -1505,7 +1550,7 @@ export const buildServer = () => {
     async (request, reply) => {
       const { filename } = request.params;
       const uploadsDir = (app as any).uploadsDir as string;
-      
+
       // Güvenlik: sadece dosya adı kısmını kullan (path traversal koruması)
       const safeFilename = path.basename(filename);
       const filePath = path.join(uploadsDir, safeFilename);
@@ -1513,11 +1558,11 @@ export const buildServer = () => {
       try {
         // Dosyanın varlığını kontrol et
         await fs.access(filePath);
-        
+
         // Dosyayı oku ve gönder
         const fileBuffer = await fs.readFile(filePath);
         const ext = safeFilename.split('.').pop()?.toLowerCase() || 'jpg';
-        const contentType = ext === 'png' ? 'image/png' 
+        const contentType = ext === 'png' ? 'image/png'
           : ext === 'gif' ? 'image/gif'
           : ext === 'webp' ? 'image/webp'
           : 'image/jpeg';
@@ -2207,7 +2252,7 @@ export const buildServer = () => {
       const wins = await request.server.db.get<{ count: number }>(`
         SELECT COUNT(*) as count
         FROM game_sessions
-        WHERE (player1_id = ? OR player2_id = ?) 
+        WHERE (player1_id = ? OR player2_id = ?)
           AND winner_id = ?
       `, userId, userId, userId);
 
@@ -2215,25 +2260,25 @@ export const buildServer = () => {
       const losses = await request.server.db.get<{ count: number }>(`
         SELECT COUNT(*) as count
         FROM game_sessions
-        WHERE (player1_id = ? OR player2_id = ?) 
+        WHERE (player1_id = ? OR player2_id = ?)
           AND (winner_id IS NULL OR winner_id != ?)
       `, userId, userId, userId);
 
       // Toplam skor
       const totalScore = await request.server.db.get<{ total: number }>(`
-        SELECT 
+        SELECT
           COALESCE(SUM(CASE WHEN player1_id = ? THEN player1_score ELSE player2_score END), 0) as total
         FROM game_sessions
         WHERE player1_id = ? OR player2_id = ?
       `, userId, userId, userId);
 
       // Ortalama skor
-      const avgScore = totalGames?.count 
+      const avgScore = totalGames?.count
         ? Math.round((totalScore?.total || 0) / totalGames.count)
         : 0;
 
       // Kazanma oranı
-      const winRate = totalGames?.count 
+      const winRate = totalGames?.count
         ? Math.round((wins?.count || 0) / totalGames.count * 100)
         : 0;
 
@@ -2248,7 +2293,7 @@ export const buildServer = () => {
         game_type: string;
         ended_at: string;
       }>(`
-        SELECT 
+        SELECT
           id, player1_nickname, player2_nickname, winner_nickname,
           player1_score, player2_score, game_type, ended_at
         FROM game_sessions
@@ -2265,12 +2310,12 @@ export const buildServer = () => {
         wins: number;
         losses: number;
       }>(`
-        SELECT 
+        SELECT
           COUNT(*) as games,
           SUM(CASE WHEN winner_id = ? THEN 1 ELSE 0 END) as wins,
           SUM(CASE WHEN (winner_id IS NULL OR winner_id != ?) THEN 1 ELSE 0 END) as losses
         FROM game_sessions
-        WHERE (player1_id = ? OR player2_id = ?) 
+        WHERE (player1_id = ? OR player2_id = ?)
           AND DATE(ended_at) = DATE('now')
           AND ended_at IS NOT NULL
       `, userId, userId, userId, userId);
@@ -2287,12 +2332,12 @@ export const buildServer = () => {
         wins: number;
         losses: number;
       }>(`
-        SELECT 
+        SELECT
           COUNT(*) as games,
           SUM(CASE WHEN winner_id = ? THEN 1 ELSE 0 END) as wins,
           SUM(CASE WHEN (winner_id IS NULL OR winner_id != ?) THEN 1 ELSE 0 END) as losses
         FROM game_sessions
-        WHERE (player1_id = ? OR player2_id = ?) 
+        WHERE (player1_id = ? OR player2_id = ?)
           AND ended_at >= datetime('now', '-7 days')
           AND ended_at IS NOT NULL
       `, userId, userId, userId, userId);
@@ -2318,7 +2363,7 @@ export const buildServer = () => {
       const allGames = Array.isArray(allGamesRaw) ? allGamesRaw : [];
       let longestWinStreak = 0;
       let currentStreak = 0;
-      
+
       for (const game of allGames) {
         if (game.winner_nickname === session.nickname) {
           currentStreak++;
@@ -2347,8 +2392,8 @@ export const buildServer = () => {
           ended_at: string;
         }) => ({
           id: game.id,
-          opponent: game.player1_nickname === session.nickname 
-            ? game.player2_nickname 
+          opponent: game.player1_nickname === session.nickname
+            ? game.player2_nickname
             : game.player1_nickname,
           won: game.winner_nickname === session.nickname,
           score: game.player1_nickname === session.nickname
@@ -2364,7 +2409,7 @@ export const buildServer = () => {
   );
 
   // Oyun oturumları listesi endpoint'i
-  app.get<{ 
+  app.get<{
     Querystring: { page?: string; limit?: string };
     Reply: GameSessionsResponse | ApiErrorResponse;
   }>(
@@ -2396,7 +2441,7 @@ export const buildServer = () => {
         ended_at: string;
         duration_seconds: number;
       }>(`
-        SELECT 
+        SELECT
           id, player1_nickname, player2_nickname, winner_nickname,
           player1_score, player2_score, game_type, tournament_id,
           started_at, ended_at, duration_seconds
@@ -2579,7 +2624,7 @@ export const buildServer = () => {
         ended_at: string;
         duration_seconds: number;
       }>(`
-        SELECT 
+        SELECT
           id, player1_id, player1_nickname,
           player2_id, player2_nickname,
           winner_id, winner_nickname,
@@ -2725,7 +2770,7 @@ export const buildServer = () => {
         created_at: string;
         updated_at: string;
       }>(`
-        SELECT 
+        SELECT
           f.id,
           f.user_id,
           f.friend_id,
@@ -2736,7 +2781,7 @@ export const buildServer = () => {
           f.updated_at
         FROM friends f
         JOIN users u ON (
-          CASE 
+          CASE
             WHEN f.user_id = ? THEN f.friend_id
             ELSE f.user_id
           END = u.id
@@ -2756,7 +2801,7 @@ export const buildServer = () => {
         created_at: string;
         updated_at: string;
       }>(`
-        SELECT 
+        SELECT
           f.id,
           f.user_id,
           f.friend_id,
@@ -2782,7 +2827,7 @@ export const buildServer = () => {
         created_at: string;
         updated_at: string;
       }>(`
-        SELECT 
+        SELECT
           f.id,
           f.user_id,
           f.friend_id,
@@ -2814,7 +2859,7 @@ export const buildServer = () => {
 
       const formatFriend = (row: FriendRow, type: 'accepted' | 'sent' | 'received'): FriendResponse => {
         let friendId: number;
-        
+
         if (type === 'accepted') {
           // Kabul edilmiş arkadaşlar için: CASE WHEN ile JOIN yapıldığı için
           // JOIN'de CASE WHEN kullanıldığı için u.id her zaman arkadaşın ID'si
@@ -2829,7 +2874,7 @@ export const buildServer = () => {
           // Gelen istekler için: friend_id = session.sub, user_id = arkadaşın ID'si
           friendId = row.user_id;
         }
-        
+
         return {
           id: row.id,
           userId: row.user_id,
@@ -2899,7 +2944,7 @@ export const buildServer = () => {
 
       // Zaten bir arkadaşlık isteği var mı kontrol et
       const existing = await request.server.db.get<{ id: number; status: string }>(
-        `SELECT id, status FROM friends 
+        `SELECT id, status FROM friends
          WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)`,
         session.sub, friendId, friendId, session.sub
       );
@@ -2993,7 +3038,7 @@ export const buildServer = () => {
 
       // İsteği kabul et
       await request.server.db.run(`
-        UPDATE friends 
+        UPDATE friends
         SET status = 'accepted', updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `, requestId);
@@ -3009,7 +3054,7 @@ export const buildServer = () => {
         created_at: string;
         updated_at: string;
       }>(`
-        SELECT 
+        SELECT
           f.id,
           f.user_id,
           f.friend_id,
@@ -3125,8 +3170,8 @@ export const buildServer = () => {
       const friendship = await request.server.db.get<{
         id: number;
       }>(
-        `SELECT id FROM friends 
-         WHERE ((user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)) 
+        `SELECT id FROM friends
+         WHERE ((user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?))
          AND status = 'accepted'`,
         session.sub, friendId, friendId, session.sub
       );
@@ -3140,7 +3185,7 @@ export const buildServer = () => {
 
       // Arkadaşlığı sil
       await request.server.db.run(`
-        DELETE FROM friends 
+        DELETE FROM friends
         WHERE ((user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?))
       `, session.sub, friendId, friendId, session.sub);
 
@@ -3270,7 +3315,7 @@ const start = async () => {
   const db = await createDatabaseConnection();
 
   server.decorate('db', db);
-  
+
   // db ayarlandıktan sonra WebSocket'i kaydet
   registerGameWebSocket(server);
   server.addHook('onClose', async () => {

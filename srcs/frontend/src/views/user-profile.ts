@@ -1,5 +1,6 @@
 import { loadSession, clearSession } from '../utils/storage';
 import { escapeHtml } from '../utils/sanitize';
+import { apiFetch } from '../utils/api';
 
 type UserProfilePayload = {
   id: number;
@@ -87,8 +88,8 @@ export const renderUserProfileView = (container: HTMLElement) => {
     if (!contentSection) return;
 
     try {
-      const response = await fetch(`/api/users/${userId}/profile`, { credentials: 'include' });
-      
+      const response = await apiFetch(`/api/users/${userId}/profile`);
+
       if (!response.ok) {
         if (response.status === 401) {
           clearSession();
@@ -122,7 +123,7 @@ export const renderUserProfileView = (container: HTMLElement) => {
           <div class="rounded-3xl bg-white/95 backdrop-blur-xl p-10 shadow-2xl border border-white/20 ring-1 ring-white/10">
             <div class="flex flex-col items-center">
               <div class="w-32 h-32 rounded-full overflow-hidden border-4 border-slate-200 shadow-lg mb-6 ${avatarUrl ? '' : `bg-gradient-to-br ${defaultAvatar.colorClass}`}">
-                ${avatarUrl 
+                ${avatarUrl
                   ? `<img src="${escapeHtml(avatarUrl)}" alt="${escapeHtml(profile.nickname)}" class="w-full h-full object-cover" />`
                   : `<div class="w-full h-full flex items-center justify-center text-white text-4xl font-bold">${defaultAvatar.initial}</div>`
                 }
@@ -152,8 +153,8 @@ export const renderUserProfileView = (container: HTMLElement) => {
               <div class="flex justify-between items-center">
                 <span class="text-slate-600 font-medium">Kazanma Oranı</span>
                 <span class="text-2xl font-bold text-slate-900">
-                  ${profile.stats.totalGames > 0 
-                    ? Math.round((profile.stats.wins / profile.stats.totalGames) * 100) 
+                  ${profile.stats.totalGames > 0
+                    ? Math.round((profile.stats.wins / profile.stats.totalGames) * 100)
                     : 0}%
                 </span>
               </div>

@@ -1,4 +1,5 @@
 import { clearSession, loadSession } from '../utils/storage';
+import { apiFetch } from '../utils/api';
 import { escapeHtml } from '../utils/sanitize';
 
 export const createSessionBanner = (onLogout: () => void) => {
@@ -45,9 +46,8 @@ export const createSessionBanner = (onLogout: () => void) => {
       gotoAuth();
 
       try {
-        await fetch('/api/users/logout', {
-          method: 'POST',
-          credentials: 'include'
+        await apiFetch('/api/users/logout', {
+          method: 'POST'
         });
       } catch (error) {
         console.warn('Logout isteği başarısız oldu:', error);

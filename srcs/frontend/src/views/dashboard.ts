@@ -1,5 +1,6 @@
 import { clearSession, loadSession, persistSession } from '../utils/storage';
 import { escapeHtml } from '../utils/sanitize';
+import { apiFetch } from '../utils/api';
 import { Chart, registerables } from 'chart.js';
 
 // Chart.js'i kaydet
@@ -99,7 +100,7 @@ const getDefaultAvatarUrl = (nickname: string) => {
 const renderAccountSummary = (session: { id: number; nickname: string; provider: 'local' | 'google'; avatarUrl?: string | null }) => {
   const defaultAvatar = getDefaultAvatarUrl(session.nickname);
   const avatarUrl = session.avatarUrl || null;
-  
+
   return `
   <section class="rounded-3xl bg-white/95 backdrop-blur-xl p-10 shadow-2xl border border-white/20 ring-1 ring-white/10 mb-8">
     <h2 class="text-3xl font-extrabold text-slate-900 mb-6 relative pb-4 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-20 after:h-1 after:bg-gradient-to-r after:from-sky-500 after:to-indigo-600 after:rounded-full">Hesap Özeti</h2>
@@ -108,7 +109,7 @@ const renderAccountSummary = (session: { id: number; nickname: string; provider:
       <div class="flex flex-col items-center md:items-start">
         <div class="relative group">
           <div class="w-32 h-32 rounded-full overflow-hidden border-4 border-slate-200 shadow-lg ${avatarUrl ? '' : `bg-gradient-to-br ${defaultAvatar.colorClass}`}" data-avatar-container>
-            ${avatarUrl 
+            ${avatarUrl
               ? `<img src="${escapeHtml(avatarUrl)}" alt="Avatar" class="w-full h-full object-cover" data-avatar-image />`
               : `<div class="w-full h-full flex items-center justify-center text-white text-4xl font-bold" data-avatar-initial>${defaultAvatar.initial}</div>`
             }
@@ -124,7 +125,7 @@ const renderAccountSummary = (session: { id: number; nickname: string; provider:
         <p class="mt-4 text-sm text-slate-600 text-center md:text-left">Profil Fotoğrafı</p>
         <p class="text-xs text-slate-500 text-center md:text-left mt-1">Maksimum 5MB</p>
       </div>
-      
+
       <!-- Account Details -->
       <div class="flex-1">
         <dl class="space-y-6">
@@ -183,7 +184,7 @@ const renderStatsCards = (stats: UserStatsPayload) => `
         </div>
       </div>
     </div>
-    
+
     <div class="rounded-2xl bg-gradient-to-br from-green-500 to-green-600 p-6 shadow-xl text-white">
       <div class="flex items-center justify-between">
         <div>
@@ -197,7 +198,7 @@ const renderStatsCards = (stats: UserStatsPayload) => `
         </div>
       </div>
     </div>
-    
+
     <div class="rounded-2xl bg-gradient-to-br from-red-500 to-red-600 p-6 shadow-xl text-white">
       <div class="flex items-center justify-between">
         <div>
@@ -247,7 +248,7 @@ const renderGameHistory = (sessions: GameSessionPayload[], pagination: { page: n
           </tr>
         </thead>
         <tbody>
-          ${sessions.length === 0 
+          ${sessions.length === 0
             ? '<tr><td colspan="5" class="text-center py-8 text-slate-600">Henüz oyun oynamadınız.</td></tr>'
             : sessions.map(session => `
               <tr class="border-b border-slate-100 hover:bg-slate-50 transition-colors cursor-pointer" data-session-id="${session.id}" style="cursor: pointer;">
@@ -257,8 +258,8 @@ const renderGameHistory = (sessions: GameSessionPayload[], pagination: { page: n
                 <td class="py-3 px-4 text-slate-700">${session.score}</td>
                 <td class="py-3 px-4">
                   <span class="px-3 py-1 rounded-lg text-sm font-semibold ${
-                    session.winner === currentNickname 
-                      ? 'bg-green-100 text-green-700' 
+                    session.winner === currentNickname
+                      ? 'bg-green-100 text-green-700'
                       : 'bg-red-100 text-red-700'
                   }">
                     ${session.winner === currentNickname ? 'Kazandın' : 'Kaybettin'}
@@ -282,8 +283,8 @@ const renderGameHistory = (sessions: GameSessionPayload[], pagination: { page: n
       <div class="flex items-center justify-between mt-6">
         <p class="text-slate-600">Toplam ${pagination.total} oyun</p>
         <div class="flex gap-2">
-          <button 
-            class="px-4 py-2 rounded-lg bg-slate-200 text-slate-700 font-semibold hover:bg-slate-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" 
+          <button
+            class="px-4 py-2 rounded-lg bg-slate-200 text-slate-700 font-semibold hover:bg-slate-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             data-pagination="prev"
             ${pagination.page === 1 ? 'disabled' : ''}
           >
@@ -292,8 +293,8 @@ const renderGameHistory = (sessions: GameSessionPayload[], pagination: { page: n
           <span class="px-4 py-2 text-slate-700 font-semibold">
             Sayfa ${pagination.page} / ${pagination.totalPages}
           </span>
-          <button 
-            class="px-4 py-2 rounded-lg bg-slate-200 text-slate-700 font-semibold hover:bg-slate-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" 
+          <button
+            class="px-4 py-2 rounded-lg bg-slate-200 text-slate-700 font-semibold hover:bg-slate-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             data-pagination="next"
             ${pagination.page === pagination.totalPages ? 'disabled' : ''}
           >
@@ -332,10 +333,10 @@ const renderFriendsSection = () => `
       </div>
       <div class="p-6">
         <div class="mb-6">
-          <input 
-            type="text" 
-            id="friend-search-input" 
-            placeholder="Kullanıcı adı ara..." 
+          <input
+            type="text"
+            id="friend-search-input"
+            placeholder="Kullanıcı adı ara..."
             class="w-full rounded-xl border-2 border-slate-300 bg-white/50 backdrop-blur-sm px-5 py-4 focus:ring-4 focus:ring-sky-500/20 focus:border-sky-500 outline-none transition-all duration-200"
             data-action="search-users"
           />
@@ -378,7 +379,7 @@ export const renderDashboardView = (container: HTMLElement) => {
 
   const applyProfile = (profile: ProfilePayload) => {
     if (!session) return;
-    session = { 
+    session = {
       id: profile.id,
       email: profile.email,
       nickname: profile.nickname,
@@ -409,8 +410,8 @@ export const renderDashboardView = (container: HTMLElement) => {
 
     try {
       const [statsResponse, sessionsResponse] = await Promise.all([
-        fetch('/api/users/stats', { credentials: 'include' }),
-        fetch('/api/game-sessions?page=1&limit=10', { credentials: 'include' })
+        apiFetch('/api/users/stats'),
+        apiFetch('/api/game-sessions?page=1&limit=10')
       ]);
 
       if (!statsResponse.ok || !sessionsResponse.ok) {
@@ -436,7 +437,7 @@ export const renderDashboardView = (container: HTMLElement) => {
           const hasGames = stats.dailyStats.games > 0;
           const wins = stats.dailyStats.wins || 0;
           const losses = stats.dailyStats.losses || 0;
-          
+
           // Eğer hiç oyun yoksa, boş bir chart göster
           if (!hasGames || (wins === 0 && losses === 0)) {
             // Canvas container'ı bul ve mesaj göster
@@ -504,7 +505,7 @@ export const renderDashboardView = (container: HTMLElement) => {
           const hasGames = stats.weeklyStats.games > 0;
           const wins = stats.weeklyStats.wins || 0;
           const losses = stats.weeklyStats.losses || 0;
-          
+
           // Eğer hiç oyun yoksa, boş bir chart göster
           if (!hasGames || (wins === 0 && losses === 0)) {
             // Canvas container'ı bul ve mesaj göster
@@ -566,27 +567,27 @@ export const renderDashboardView = (container: HTMLElement) => {
 
       // Sayfalama butonları için event listener'lar
       let currentPage = 1;
-      
+
       const loadGameSessions = async (page: number) => {
         if (!session) return;
         try {
-          const response = await fetch(`/api/game-sessions?page=${page}&limit=10`, { credentials: 'include' });
+          const response = await apiFetch(`/api/game-sessions?page=${page}&limit=10`);
           if (!response.ok) throw new Error('Oyun geçmişi yüklenemedi');
           const data = (await response.json()) as { sessions: GameSessionPayload[]; pagination: any };
-          
+
           const historySection = root.querySelector('section:last-child');
           if (historySection) {
             historySection.innerHTML = renderGameHistory(data.sessions, data.pagination, session.nickname);
             currentPage = page;
-            
+
             // Yeni butonlar için event listener'ları tekrar ekle
             const newPrevButton = root.querySelector('[data-pagination="prev"]');
             const newNextButton = root.querySelector('[data-pagination="next"]');
-            
+
             newPrevButton?.addEventListener('click', () => {
               if (currentPage > 1) loadGameSessions(currentPage - 1);
             });
-            
+
             newNextButton?.addEventListener('click', () => {
               if (currentPage < data.pagination.totalPages) loadGameSessions(currentPage + 1);
             });
@@ -643,7 +644,7 @@ export const renderDashboardView = (container: HTMLElement) => {
     }
   };
 
-  void fetch('/api/users/profile', { credentials: 'include' })
+  void apiFetch('/api/users/profile')
     .then(async (response) => {
       if (!response.ok) {
         if (response.status === 401) {
@@ -693,12 +694,12 @@ export const renderDashboardView = (container: HTMLElement) => {
   const renderFriendItem = (friend: FriendPayload, type: 'friend' | 'sent' | 'received') => {
     const defaultAvatar = getDefaultAvatarUrl(friend.friendNickname);
     const avatarUrl = friend.friendAvatarUrl || null;
-    
+
     return `
       <div class="flex items-center justify-between p-4 rounded-xl border-2 border-slate-200 hover:border-sky-300 transition-colors">
         <div class="flex items-center gap-4 flex-1 cursor-pointer" data-action="view-profile" data-user-id="${friend.friendId}" style="cursor: pointer;">
           <div class="w-12 h-12 rounded-full overflow-hidden border-2 border-slate-200 ${avatarUrl ? '' : `bg-gradient-to-br ${defaultAvatar.colorClass}`}" data-avatar-container>
-            ${avatarUrl 
+            ${avatarUrl
               ? `<img src="${escapeHtml(avatarUrl)}" alt="${escapeHtml(friend.friendNickname)}" class="w-full h-full object-cover" />`
               : `<div class="w-full h-full flex items-center justify-center text-white text-lg font-bold">${defaultAvatar.initial}</div>`
             }
@@ -738,7 +739,7 @@ export const renderDashboardView = (container: HTMLElement) => {
     if (!friendsSection) return;
 
     try {
-      const response = await fetch('/api/friends', { credentials: 'include' });
+      const response = await apiFetch('/api/friends');
       if (!response.ok) {
         throw new Error('Arkadaşlar yüklenemedi');
       }
@@ -818,13 +819,12 @@ export const renderDashboardView = (container: HTMLElement) => {
         btn.addEventListener('click', async (e) => {
           const friendId = (e.currentTarget as HTMLElement).getAttribute('data-friend-id');
           if (!friendId) return;
-          
+
           try {
-            const response = await fetch(`/api/friends/accept/${friendId}`, {
-              method: 'POST',
-              credentials: 'include'
+            const response = await apiFetch(`/api/friends/accept/${friendId}`, {
+              method: 'POST'
             });
-            
+
             if (response.ok) {
               await loadFriends();
             } else {
@@ -842,13 +842,12 @@ export const renderDashboardView = (container: HTMLElement) => {
         btn.addEventListener('click', async (e) => {
           const friendId = (e.currentTarget as HTMLElement).getAttribute('data-friend-id');
           if (!friendId) return;
-          
+
           try {
-            const response = await fetch(`/api/friends/reject/${friendId}`, {
-              method: 'POST',
-              credentials: 'include'
+            const response = await apiFetch(`/api/friends/reject/${friendId}`, {
+              method: 'POST'
             });
-            
+
             if (response.ok) {
               await loadFriends();
             } else {
@@ -866,17 +865,16 @@ export const renderDashboardView = (container: HTMLElement) => {
         btn.addEventListener('click', async (e) => {
           const friendId = (e.currentTarget as HTMLElement).getAttribute('data-friend-id');
           if (!friendId) return;
-          
+
           if (!confirm('Bu kişiyi arkadaş listenizden kaldırmak istediğinize emin misiniz?')) {
             return;
           }
-          
+
           try {
-            const response = await fetch(`/api/friends/${friendId}`, {
-              method: 'DELETE',
-              credentials: 'include'
+            const response = await apiFetch(`/api/friends/${friendId}`, {
+              method: 'DELETE'
             });
-            
+
             if (response.ok) {
               await loadFriends();
             } else {
@@ -922,9 +920,7 @@ export const renderDashboardView = (container: HTMLElement) => {
     friendSearchResults.innerHTML = '<div class="text-center py-8"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-500 mx-auto"></div><p class="mt-4 text-slate-400">Aranıyor...</p></div>';
 
     try {
-      const response = await fetch(`/api/users/search?q=${encodeURIComponent(query)}`, {
-        credentials: 'include'
-      });
+      const response = await apiFetch(`/api/users/search?q=${encodeURIComponent(query)}`);
 
       if (!response.ok) {
         if (response.status === 401) {
@@ -946,7 +942,7 @@ export const renderDashboardView = (container: HTMLElement) => {
       friendSearchResults.innerHTML = data.users.map(user => {
         const defaultAvatar = getDefaultAvatarUrl(user.nickname);
         const avatarUrl = user.avatarUrl || null;
-        
+
         let buttonHtml = '';
         if (user.friendStatus === 'none' || user.friendStatus === 'rejected') {
           buttonHtml = `<button class="px-4 py-2 rounded-lg bg-sky-500 text-white font-semibold text-sm hover:bg-sky-600 transition-colors" data-action="add-friend" data-user-id="${user.id}">Arkadaş Ekle</button>`;
@@ -960,7 +956,7 @@ export const renderDashboardView = (container: HTMLElement) => {
           <div class="flex items-center justify-between p-4 rounded-xl border-2 border-slate-200 hover:border-sky-300 transition-colors">
             <div class="flex items-center gap-4 flex-1">
               <div class="w-12 h-12 rounded-full overflow-hidden border-2 border-slate-200 ${avatarUrl ? '' : `bg-gradient-to-br ${defaultAvatar.colorClass}`}">
-                ${avatarUrl 
+                ${avatarUrl
                   ? `<img src="${escapeHtml(avatarUrl)}" alt="${escapeHtml(user.nickname)}" class="w-full h-full object-cover" />`
                   : `<div class="w-full h-full flex items-center justify-center text-white text-lg font-bold">${defaultAvatar.initial}</div>`
                 }
@@ -979,15 +975,15 @@ export const renderDashboardView = (container: HTMLElement) => {
         btn.addEventListener('click', async (e) => {
           const userId = (e.currentTarget as HTMLElement).getAttribute('data-user-id');
           if (!userId) return;
-          
+
           try {
-            const response = await fetch('/api/friends/add', {
+            const response = await apiFetch('/api/friends/add', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               credentials: 'include',
               body: JSON.stringify({ friendId: Number(userId) })
             });
-            
+
             if (response.ok) {
               // Search'i yenile
               if (friendSearchInput) {
@@ -1041,11 +1037,11 @@ export const renderDashboardView = (container: HTMLElement) => {
   // Search input event listener
   friendSearchInput?.addEventListener('input', (e) => {
     const query = (e.target as HTMLInputElement).value.trim();
-    
+
     if (searchTimeout) {
       clearTimeout(searchTimeout);
     }
-    
+
     searchTimeout = window.setTimeout(() => {
       performUserSearch(query);
     }, 500);
@@ -1083,9 +1079,8 @@ export const renderDashboardView = (container: HTMLElement) => {
     formData.append('file', file);
 
     try {
-      const response = await fetch('/api/users/avatar', {
+      const response = await apiFetch('/api/users/avatar', {
         method: 'POST',
-        credentials: 'include',
         body: formData
       });
 
@@ -1096,12 +1091,12 @@ export const renderDashboardView = (container: HTMLElement) => {
       }
 
       const result = await response.json() as { avatarUrl: string };
-      
+
       // Avatar'ı güncelle
       const avatarContainer = root.querySelector('[data-avatar-container]');
       const avatarImage = root.querySelector<HTMLImageElement>('[data-avatar-image]');
       const avatarInitial = root.querySelector<HTMLDivElement>('[data-avatar-initial]');
-      
+
       if (avatarContainer && result.avatarUrl) {
         if (avatarImage) {
           avatarImage.src = result.avatarUrl;
@@ -1121,7 +1116,7 @@ export const renderDashboardView = (container: HTMLElement) => {
       }
 
       // Profil bilgisini yeniden yükle
-      const profileResponse = await fetch('/api/users/profile', { credentials: 'include' });
+      const profileResponse = await apiFetch('/api/users/profile');
       if (profileResponse.ok) {
         const profile = (await profileResponse.json()) as ProfilePayload;
         applyProfile(profile);
@@ -1147,9 +1142,8 @@ export const renderDashboardView = (container: HTMLElement) => {
 
     gotoAuth();
     try {
-      await fetch('/api/users/logout', {
-        method: 'POST',
-        credentials: 'include'
+      await apiFetch('/api/users/logout', {
+        method: 'POST'
       });
     } catch (error) {
       console.warn('Logout isteği başarısız oldu:', error);
@@ -1268,7 +1262,7 @@ export const renderDashboardView = (container: HTMLElement) => {
 
     updateNicknameStatus('loading', 'Kaydediliyor...');
     try {
-      const response = await fetch('/api/users/profile', {
+      const response = await apiFetch('/api/users/profile', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

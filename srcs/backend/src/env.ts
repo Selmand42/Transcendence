@@ -30,5 +30,6 @@ export const env = {
   cookieSecure: process.env.COOKIE_SECURE === 'true' || nodeEnv === 'production',
   googleClientId: read('GOOGLE_CLIENT_ID'),
   googleClientSecret: read('GOOGLE_CLIENT_SECRET'),
-  googleRedirectUri: read('GOOGLE_REDIRECT_URI')
+  googleRedirectUri: read('GOOGLE_REDIRECT_URI'),
+  frontendUrl: process.env.FRONTEND_URL ?? 'https://localhost:8443'
 };

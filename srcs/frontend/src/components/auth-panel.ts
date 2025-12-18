@@ -1,4 +1,5 @@
 import { clearSession, loadSession, persistSession, type StoredUser } from '../utils/storage';
+import { apiFetch } from '../utils/api';
 
 // Her form için endpoint, payload hazırlama ve başarı mesajını tarif eden yapı.
 type SubmitConfig = {
@@ -50,11 +51,11 @@ const inputTemplate = (
   return `
     <label class="flex flex-col gap-3">
       <span class="text-sm font-bold text-slate-800 tracking-wide">${label}</span>
-      <input 
-        type="${type}" 
-        name="${name}" 
-        required 
-        ${constraints} 
+      <input
+        type="${type}"
+        name="${name}"
+        required
+        ${constraints}
         placeholder="${placeholder}"
         ${autocomplete ? `autocomplete="${autocomplete}"` : ''}
         class="w-full px-5 py-4 rounded-xl border-2 border-slate-200 bg-white/50 backdrop-blur-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-sky-500/20 focus:border-sky-500 transition-all duration-300 shadow-sm hover:shadow-md hover:border-slate-300"
@@ -197,9 +198,8 @@ const updateStatus = (
 // Access token süresi dolmuşsa refresh endpoint'i çağırarak oturumu yeniler.
 const attemptRefresh = async () => {
   try {
-    const response = await fetch('/api/users/refresh', {
-      method: 'POST',
-      credentials: 'include'
+    const response = await apiFetch('/api/users/refresh', {
+      method: 'POST'
     });
 
     if (!response.ok) {
@@ -229,7 +229,7 @@ const attemptRefresh = async () => {
 // Sayfa açıldığında cookie'lerdeki oturumu backend ile doğrular.
 const syncSessionWithServer = async (onSessionChange: () => void) => {
   try {
-    const response = await fetch('/api/users/me', { credentials: 'include' });
+    const response = await apiFetch('/api/users/me');
     if (response.ok) {
       const contentType = response.headers.get('content-type');
       if (contentType && contentType.includes('application/json')) {
@@ -355,14 +355,14 @@ export const createAuthPanel = () => {
     const isInitialActive = meta.formId === 'manual-register-form';
     section.className = 'form-section rounded-3xl bg-white/95 backdrop-blur-xl p-10 shadow-2xl border border-white/20 ring-1 ring-white/10';
     section.dataset.section = meta.formId;
-    
+
     // Görünürlüğü inline style ile garanti et
     if (isInitialActive) {
       section.style.display = 'block';
     } else {
       section.style.display = 'none';
     }
-    
+
     section.innerHTML = `
       <div class="mb-8">
         <h2 class="text-3xl font-extrabold text-slate-900 mb-2">${meta.title}</h2>
@@ -405,7 +405,7 @@ export const createAuthPanel = () => {
     oauthAlert.innerHTML = `
       <div class="rounded-2xl border-2 p-5 backdrop-blur-xl shadow-2xl ${copy.type === 'success' ? 'bg-green-500/20 text-green-100 border-green-400/30 ring-2 ring-green-500/20' : 'bg-red-500/20 text-red-100 border-red-400/30 ring-2 ring-red-500/20'}">
         <div class="flex items-center">
-          ${copy.type === 'success' 
+          ${copy.type === 'success'
             ? '<svg class="w-6 h-6 mr-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>'
             : '<svg class="w-6 h-6 mr-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/></svg>'
           }
@@ -447,7 +447,7 @@ export const createAuthPanel = () => {
     const sections = Array.from(
       contentContainer.querySelectorAll<HTMLElement>('.form-section')
     );
-    
+
     sections.forEach((section) => {
       const isActive = section.dataset.section === targetId;
       if (isActive) {
@@ -468,9 +468,9 @@ export const createAuthPanel = () => {
       .forEach((button) => {
         const isActive = button.dataset.target === targetId;
         const isGoogle = button.dataset.target === 'google';
-        
+
         if (isGoogle) return; // Google butonu aktif/pasif durumuna göre değişmez
-        
+
         // Aktif/pasif durumunu toggle et (boyut değişmeden sadece renk)
         if (isActive) {
           button.classList.remove('bg-slate-100', 'text-slate-700', 'hover:bg-slate-200');
@@ -486,10 +486,10 @@ export const createAuthPanel = () => {
     const button = document.createElement('button');
     button.type = 'button';
     button.dataset.target = action.id;
-    
+
     // Base Tailwind sınıfları - büyük butonlar, sol tarafta dikey sıralanacak
     const baseClasses = 'px-10 py-4 rounded-xl font-bold text-base transition-all duration-300 flex items-center justify-center gap-2 w-full border-2';
-    
+
     if (action.type === 'google') {
       // Google butonu için özel stil
       button.className = `${baseClasses} bg-white/95 backdrop-blur-sm text-slate-800 border-white/30 hover:bg-white hover:border-white/50 hover:shadow-lg hover:scale-[1.02] transform`;
@@ -592,10 +592,9 @@ export const createAuthPanel = () => {
       updateStatus(wrapper, config.formId, 'loading');
 
       try {
-        const response = await fetch(config.endpoint, {
+        const response = await apiFetch(config.endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
           body: JSON.stringify(config.buildPayload(formData))
         });
 

@@ -1,0 +1,3 @@
+web: node --enable-source-maps dist/src/server.js
+
+
