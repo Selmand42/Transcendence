@@ -1,10 +1,9 @@
 {
   "$schema": "https://railway.app/railway.schema.json",
   "build": {
-    "builder": "NIXPACKS"
+    "dockerfilePath": "srcs/docker/backend/Dockerfile"
   },
   "deploy": {
-    "rootDirectory": "srcs/backend",
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 10
   }
